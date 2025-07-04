@@ -1,17 +1,21 @@
-# Makefile for KAG Knowledge System
+# Makefile for ino Knowledge System
 
 # 基础变量
-APP_NAME := kag
+APP_NAME := ino
 BINARY_NAME := server
 GO_VERSION := 1.21.2
 BUILD_DIR := bin
-DOCKER_IMAGE := kag-system
+DOCKER_IMAGE := ino-system
 DOCKER_TAG := latest
 
 # Go 编译参数
 CGO_ENABLED := 0
-GOOS := linux
-GOARCH := amd64
+# Docker构建使用Linux
+DOCKER_GOOS := linux
+DOCKER_GOARCH := amd64
+# 本地构建使用当前系统
+LOCAL_GOOS := $(shell go env GOOS)
+LOCAL_GOARCH := $(shell go env GOARCH)
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -19,7 +23,7 @@ GOARCH := amd64
 # 帮助信息
 .PHONY: help
 help: ## 显示帮助信息
-	@echo "KAG Knowledge System - 构建和部署工具"
+	@echo "ino Knowledge System - 构建和部署工具"
 	@echo ""
 	@echo "使用方法:"
 	@echo "  make [target]"
@@ -44,16 +48,27 @@ deps: ## 下载Go依赖
 	@go mod tidy
 	@echo "✅ 依赖下载完成"
 
-# 构建二进制文件
+# 构建本地二进制文件
 .PHONY: build
-build: deps ## 构建应用程序
-	@echo "🔨 构建应用程序..."
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
+build: deps ## 构建本地运行的应用程序
+	@echo "🔨 构建本地应用程序..."
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(LOCAL_GOOS) GOARCH=$(LOCAL_GOARCH) \
 		go build -a -installsuffix cgo \
 		-ldflags "-X main.version=$(shell git describe --tags --always --dirty)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME) \
 		cmd/main.go
 	@echo "✅ 构建完成: $(BUILD_DIR)/$(BINARY_NAME)"
+
+# 构建Docker二进制文件
+.PHONY: build-docker
+build-docker: deps ## 构建Docker镜像用的应用程序
+	@echo "🔨 构建Docker应用程序..."
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(DOCKER_GOOS) GOARCH=$(DOCKER_GOARCH) \
+		go build -a -installsuffix cgo \
+		-ldflags "-X main.version=$(shell git describe --tags --always --dirty)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME) \
+		cmd/main.go
+	@echo "✅ Docker构建完成: $(BUILD_DIR)/$(BINARY_NAME)"
 
 # 本地运行
 .PHONY: run
@@ -61,9 +76,15 @@ run: build ## 本地运行应用程序
 	@echo "🚀 启动应用程序..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
 
+# 开发模式运行
+.PHONY: dev
+dev: ## 开发模式运行（不构建二进制文件）
+	@echo "🔧 开发模式启动..."
+	@go run cmd/main.go
+
 # 构建Docker镜像
 .PHONY: docker-build
-docker-build: build ## 构建Docker镜像
+docker-build: build-docker ## 构建Docker镜像
 	@echo "🐳 构建Docker镜像..."
 	@docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 	@echo "✅ Docker镜像构建完成: $(DOCKER_IMAGE):$(DOCKER_TAG)"
@@ -108,12 +129,12 @@ logs: ## 查看所有服务日志
 # 查看API服务日志
 .PHONY: logs-api
 logs-api: ## 查看API服务日志
-	@docker-compose logs -f kag-api
+	@docker-compose logs -f ino-api
 
 # 进入API容器
 .PHONY: shell
 shell: ## 进入API容器shell
-	@docker-compose exec kag-api sh
+	@docker-compose exec ino-api sh
 
 # 健康检查
 .PHONY: health

@@ -24,7 +24,7 @@ func main() {
 	r := gin.Default()
 
 	// 注册路由
-	server.RegisterRoutes(r)
+	server.RegisterRoutes(r, version)
 
 	// 启动服务器
 	port := viper.GetString("server.port")
