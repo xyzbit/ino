@@ -96,7 +96,7 @@ func setDefaults() {
 	viper.SetDefault("database.port", 3306)
 	viper.SetDefault("database.user", "root")
 	viper.SetDefault("database.password", "password")
-	viper.SetDefault("database.dbname", "kag")
+	viper.SetDefault("database.dbname", "ino")
 
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", 6379)

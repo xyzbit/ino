@@ -1,7 +1,7 @@
 -- 创建KAG数据库
-CREATE DATABASE IF NOT EXISTS kag CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS ino CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE kag;
+USE ino;
 
 -- 用户表
 CREATE TABLE users (
@@ -106,5 +106,5 @@ INSERT INTO domains (domain_name, description) VALUES
 ('documentation', '文档管理领域');
 
 INSERT INTO users (user_id, username, email) VALUES 
-('admin', 'Administrator', 'admin@kag.com'),
-('system', 'System User', 'system@kag.com'); 
+('admin', 'Administrator', 'admin@ino.com'),
+('system', 'System User', 'system@ino.com'); 

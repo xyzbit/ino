@@ -7,7 +7,7 @@ database:
   port: 3306
   user: "root"
   password: "rootpassword"
-  dbname: "kag"
+  dbname: "ino"
 
 redis:
   host: "localhost"
@@ -36,7 +36,7 @@ logging:
 
 # 应用配置
 app:
-  name: "KAG Knowledge System"
+  name: "ino Knowledge System"
   version: "v1.0.0"
   debug: true
 

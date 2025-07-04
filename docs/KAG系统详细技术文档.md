@@ -1,4 +1,4 @@
-# KAG 知识增强系统详细技术文档
+# ino 知识增强系统详细技术文档
 
 ## 1. 系统概述
 
@@ -169,7 +169,7 @@ Content-Type: application/json
 {
   "domain": "code-review",
   "tags": {
-    "project": "kag-system",
+    "project": "ino-system",
     "type": "code-review"
   },
   "conversation": [
@@ -216,7 +216,7 @@ Content-Type: application/json
   "query": "如何进行代码评审",
   "domain": "code-review",
   "tags": {
-    "project": "kag-system"
+    "project": "ino-system"
   },
   "search_config": {
     "max_results": 10,
@@ -652,7 +652,7 @@ func (mr *MultiRetriever) Search(query string, config SearchConfig) (*SearchResu
 # docker-compose.yml
 version: '3.8'
 services:
-  kag-api:
+  ino-api:
     build: .
     ports:
       - "8080:8080"
@@ -663,7 +663,7 @@ services:
       - neo4j
     environment:
       - ENV=production
-      - DATABASE_URL=mysql://user:pass@mysql:3306/kag
+      - DATABASE_URL=mysql://user:pass@mysql:3306/ino
       - REDIS_URL=redis://redis:6379
       - MILVUS_URL=milvus:19530
       - NEO4J_URL=bolt://neo4j:7687
@@ -672,7 +672,7 @@ services:
     image: mysql:8.0
     environment:
       - MYSQL_ROOT_PASSWORD=rootpass
-      - MYSQL_DATABASE=kag
+      - MYSQL_DATABASE=ino
     volumes:
       - mysql_data:/var/lib/mysql
       
@@ -700,20 +700,20 @@ services:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kag-api
+  name: ino-api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: kag-api
+      app: ino-api
   template:
     metadata:
       labels:
-        app: kag-api
+        app: ino-api
     spec:
       containers:
-      - name: kag-api
-        image: kag-api:latest
+      - name: ino-api
+        image: ino-api:latest
         ports:
         - containerPort: 8080
         env:
