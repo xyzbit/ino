@@ -1,0 +1,52 @@
+server:
+  port: "8080"
+  mode: "debug"  # debug, release
+
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "rootpassword"
+  dbname: "kag"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+
+milvus:
+  host: "localhost"
+  port: 19530
+
+neo4j:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "neo4jpassword"
+
+eino:
+  api_key: ""  # 从环境变量或配置中获取
+  model: "gpt-3.5-turbo"
+
+# 日志配置
+logging:
+  level: "info"  # debug, info, warn, error
+  format: "json"  # json, text
+  output: "stdout"  # stdout, file
+
+# 应用配置
+app:
+  name: "KAG Knowledge System"
+  version: "v1.0.0"
+  debug: true
+
+# 文件上传配置
+upload:
+  max_size: 104857600  # 100MB
+  allowed_types: ["pdf", "txt", "md", "doc", "docx"]
+  storage_path: "/app/uploads"
+
+# 缓存配置
+cache:
+  default_ttl: 1800  # 30分钟
+  max_keys: 10000 

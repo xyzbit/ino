@@ -1,0 +1,129 @@
+# Milvus配置文件 - KAG Knowledge System
+
+# 服务器配置
+server:
+  address: 0.0.0.0
+  port: 19530
+  deploy:
+    mode: standalone
+
+# 数据存储配置
+storage:
+  type: local
+  path: /var/lib/milvus/data
+
+# 元数据配置
+metastore:
+  type: etcd
+  endpoints:
+    - etcd:2379
+
+# 对象存储配置
+minio:
+  address: minio:9000
+  port: 9000
+  accessKeyID: minioadmin
+  secretAccessKey: minioadmin
+  useSSL: false
+  useIAM: false
+  cloudProvider: aws
+  iamEndpoint: 
+  bucketName: milvus-bucket
+  rootPath: files
+
+# 日志配置
+log:
+  level: info
+  file:
+    rootPath: /var/lib/milvus/logs
+    maxSize: 300 # MB
+    maxAge: 10 # days
+    maxBackups: 20
+  format: text
+
+# 内存配置
+memory:
+  limit: 0.8 # 80% of total memory
+
+# 向量索引配置
+index:
+  knowhere:
+    enable: true
+    # 索引构建并发数
+    build_thread_pool_size: 4
+    # 搜索线程池大小
+    search_thread_pool_size: 8
+
+# 查询配置
+query:
+  # 查询节点数量
+  node_nums: 1
+  # 查询结果的最大数量
+  topk: 16384
+  # 查询并发数
+  concurrent: 2
+
+# 数据节点配置
+dataNode:
+  # 数据节点数量
+  nums: 1
+  # 批量插入大小
+  batchSize: 1000
+  # 刷新间隔
+  flushInterval: 10
+
+# 索引节点配置
+indexNode:
+  # 索引节点数量
+  nums: 1
+  # 索引构建并发数
+  buildParallel: 4
+
+# 代理配置
+proxy:
+  # 代理节点数量
+  nums: 1
+  # 超时配置
+  timeout: 30000 # ms
+  # 最大连接数
+  maxConnections: 1000
+
+# 缓存配置
+cache:
+  size: 4GB
+  enable: true
+
+# 性能配置
+performance:
+  # 自动压缩
+  autoCompaction: true
+  # 压缩阈值
+  compactionThreshold: 0.3
+  # 内存映射
+  mmapEnabled: true
+
+# 安全配置
+security:
+  # 认证
+  authenticationEnabled: false
+  # TLS
+  tlsEnabled: false
+
+# 配额配置
+quota:
+  # 磁盘配额
+  diskQuota: 0 # unlimited
+  # 内存配额
+  memoryQuota: 0 # unlimited
+
+# 集群配置
+cluster:
+  enable: false
+  
+# 追踪配置
+trace:
+  enable: false
+  
+# 监控配置
+metrics:
+  enable: false 
