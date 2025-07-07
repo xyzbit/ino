@@ -15,25 +15,39 @@ const (
 
 // Document 文档模型
 type Document struct {
-	ID          uint64                 `json:"id" gorm:"primaryKey,autoIncrement"`
-	DocumentID  string                 `json:"document_id" gorm:"uniqueIndex,type:varchar(64),not null"`
-	DomainID    uint64                 `json:"domain_id" gorm:"not null"`
-	Domain      *Domain                `json:"domain,omitempty" gorm:"foreignKey:DomainID"`
-	Title       string                 `json:"title" gorm:"size:500,not null"`
-	ContentType string                 `json:"content_type" gorm:"size:50"`
-	FilePath    string                 `json:"file_path" gorm:"size:1000"`
+	ID          uint64                 `json:"id"`
+	DocumentID  string                 `json:"document_id"`
+	Domain      string                 `json:"domain"`
+	Title       string                 `json:"title"`
+	Summary     string                 `json:"summary"`
+	ContentType string                 `json:"content_type"`
+	FilePath    string                 `json:"file_path"`
 	FileSize    int64                  `json:"file_size"`
-	Metadata    map[string]interface{} `json:"metadata" gorm:"type:json"`
-	Tags        []string               `json:"tags" gorm:"type:json"`
-	Status      DocumentStatus         `json:"status" gorm:"default:processing"`
-	ChunksCount int                    `json:"chunks_count" gorm:"default:0"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Tags        []string               `json:"tags"`
+	Status      DocumentStatus         `json:"status"`
+	ChunksCount int                    `json:"chunks_count"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
-// TableName 指定表名
-func (Document) TableName() string {
-	return "documents"
+func (d *Document) GetDescription() string {
+	return `
+	{
+		"domain": "coding", // 文档领域, 如：电商、金融、教育、医疗、编程等
+		"title": "文档标题", // 文档标题
+		"summary": "文档摘要", // 文档摘要
+		"content_type": "markdown", // 文档内容类型, markdown|pdf|word|excel|ppt|txt|image|video|audio
+		"file_path": "https://example.com/document.txt", // 文档文件路径
+		"file_size": 1024, // 文档文件大小, 单位: 字节
+		"metadata": { // 文档元数据, 可选
+			"author": "张三", // 文档作者
+			"subject": "文档主题", // 文档主题
+			"keywords": ["关键词1", "关键词2"], // 文档关键词
+		},
+		"tags": ["tag1", "tag2"], // 文档标签, 可选
+	}
+	`
 }
 
 // DocumentMetadata 文档元数据
@@ -89,8 +103,7 @@ type UpdateDocumentRequest struct {
 type DocumentResponse struct {
 	ID          uint64                 `json:"id"`
 	DocumentID  string                 `json:"document_id"`
-	DomainID    uint64                 `json:"domain_id"`
-	Domain      *DomainResponse        `json:"domain,omitempty"`
+	Domain      string                 `json:"domain"`
 	Title       string                 `json:"title"`
 	ContentType string                 `json:"content_type"`
 	FilePath    string                 `json:"file_path"`
@@ -108,7 +121,7 @@ func (d *Document) ToResponse() *DocumentResponse {
 	resp := &DocumentResponse{
 		ID:          d.ID,
 		DocumentID:  d.DocumentID,
-		DomainID:    d.DomainID,
+		Domain:      d.Domain,
 		Title:       d.Title,
 		ContentType: d.ContentType,
 		FilePath:    d.FilePath,
@@ -119,10 +132,6 @@ func (d *Document) ToResponse() *DocumentResponse {
 		ChunksCount: d.ChunksCount,
 		CreatedAt:   d.CreatedAt,
 		UpdatedAt:   d.UpdatedAt,
-	}
-
-	if d.Domain != nil {
-		resp.Domain = d.Domain.ToResponse()
 	}
 
 	return resp

@@ -9,9 +9,7 @@ type SearchLog struct {
 	ID           uint64                 `json:"id" gorm:"primaryKey,autoIncrement"`
 	QueryID      string                 `json:"query_id" gorm:"uniqueIndex,type:varchar(64),not null"`
 	UserID       uint64                 `json:"user_id"`
-	User         *User                  `json:"user,omitempty" gorm:"foreignKey:UserID"`
-	DomainID     uint64                 `json:"domain_id"`
-	Domain       *Domain                `json:"domain,omitempty" gorm:"foreignKey:DomainID"`
+	Domain       string                 `json:"domain"`
 	QueryText    string                 `json:"query_text" gorm:"type:text,not null"`
 	SearchConfig map[string]interface{} `json:"search_config" gorm:"type:json"`
 	Results      SearchResults          `json:"results" gorm:"type:json"`

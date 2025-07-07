@@ -84,7 +84,6 @@ type FeedbackRepository interface {
 	ListByType(ctx context.Context, feedbackType models.FeedbackType, offset, limit int) ([]*models.Feedback, error)
 	Count(ctx context.Context) (int64, error)
 	CountByType(ctx context.Context, feedbackType models.FeedbackType) (int64, error)
-	GetStats(ctx context.Context) (*models.FeedbackStats, error)
 }
 
 // SearchLogRepository 搜索日志仓储接口

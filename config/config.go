@@ -54,8 +54,16 @@ type Neo4jConfig struct {
 
 // EinoConfig Eino AI配置
 type EinoConfig struct {
-	APIKey string `mapstructure:"api_key"`
-	Model  string `mapstructure:"model"`
+	Optimizer        LLMConfig `mapstructure:"optimizer"`
+	IndexerEmbeding  LLMConfig `mapstructure:"indexer_embedding"`
+	IndexerExtractor LLMConfig `mapstructure:"indexer_extractor"`
+	Retriever        LLMConfig `mapstructure:"retriever"`
+}
+
+type LLMConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+	Model   string `mapstructure:"model"`
+	APIKey  string `mapstructure:"api_key"`
 }
 
 var AppConfig Config

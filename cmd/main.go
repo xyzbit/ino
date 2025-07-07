@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/xyzbit/ino/config"
+	"github.com/xyzbit/ino/internal/application/openapi"
 	"github.com/xyzbit/ino/internal/infra"
 	"github.com/xyzbit/ino/internal/server"
 )
@@ -28,11 +29,14 @@ func main() {
 	infra.Init()
 	defer infra.Close()
 
+	// 初始化App
+	openAPI := openapi.NewOpenAPI()
+
 	// 创建路由
 	r := gin.Default()
 
 	// 注册路由
-	server.RegisterRoutes(r, "v1.0.0")
+	server.RegisterRoutes(r, openAPI, "v1.0.0")
 
 	// 创建服务器
 	srv := &http.Server{
