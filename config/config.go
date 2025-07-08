@@ -54,10 +54,10 @@ type Neo4jConfig struct {
 
 // EinoConfig Eino AI配置
 type EinoConfig struct {
-	Optimizer        LLMConfig `mapstructure:"optimizer"`
-	IndexerEmbeding  LLMConfig `mapstructure:"indexer_embedding"`
-	IndexerExtractor LLMConfig `mapstructure:"indexer_extractor"`
-	Retriever        LLMConfig `mapstructure:"retriever"`
+	Optimizer        LLMConfig `mapstructure:"optimizer"`         // 优化器，可选
+	IndexerEmbeding  LLMConfig `mapstructure:"indexer_embedding"` // 索引器嵌入，必填
+	IndexerExtractor LLMConfig `mapstructure:"indexer_extractor"` // 索引器提取，必填
+	Retriever        LLMConfig `mapstructure:"retriever"`         // 检索器，必填
 }
 
 type LLMConfig struct {
@@ -69,12 +69,15 @@ type LLMConfig struct {
 var AppConfig Config
 
 // Init 初始化配置
-func Init() {
+func Init(path ...string) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 	viper.AddConfigPath("./configs")
+	for _, p := range path {
+		viper.AddConfigPath(p)
+	}
 
 	// 设置默认值
 	setDefaults()

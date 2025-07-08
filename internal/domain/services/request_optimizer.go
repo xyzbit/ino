@@ -30,7 +30,7 @@ func NewRequestOptimizer() (*RequestOptimizer, error) {
 		APIKey:  optimizerConfig.APIKey,
 	})
 	if err != nil {
-		return nil, errors.Errorf("failed to create chat model: %w", err)
+		return nil, errors.WithStack(err)
 	}
 
 	return &RequestOptimizer{
@@ -39,44 +39,50 @@ func NewRequestOptimizer() (*RequestOptimizer, error) {
 }
 
 // AnalyzeContent 分析内容类型并提取信息
-func (ca *RequestOptimizer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) (*models.OptimizedRequest, error) {
-	optimizedReq := &models.OptimizedRequest{
-		ContentType: req.ContentType,
-	}
-
+func (ca *RequestOptimizer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) (*types.CollectKnowledgeRequest, error) {
 	// classify auto content type.
 	contentType, err := ca.reqContentClassification(ctx, req.ContentType, req)
 	if err != nil {
-		return optimizedReq, fmt.Errorf("failed to analyze content: %w", err)
+		return req, err
 	}
 
 	// extract content.
-	return ca.reqExtraction(ctx, contentType, req)
+	content, err := ca.reqExtraction(ctx, contentType, req)
+	if err != nil {
+		return req, err
+	}
+
+	return &types.CollectKnowledgeRequest{
+		ContentType:  contentType,
+		CollectionID: req.CollectionID,
+		Tags:         req.Tags,
+		Content:      content,
+	}, nil
 }
 
 // reqContentClassification 请求内容分类.
 func (ca *RequestOptimizer) reqContentClassification(ctx context.Context, contentType string, req *types.CollectKnowledgeRequest) (string, error) {
-	if contentType != constants.ContentTypeAuto {
+	if contentType != "" {
 		return contentType, nil
 	}
 	result := models.ContentTypeClassificationResult{}
 
 	params := map[string]interface{}{
-		"origin_request_desc": req.GetDescription(),
-		"output_desc":         result.GetDescription(),
+		"origin_request": req.GetDescription(),
+		"output_desc":    result.GetDescription(),
 	}
 
 	messages, err := models.PromptContentTypeClassification.Format(ctx, params)
 	if err != nil {
-		return "", errors.Errorf("failed to format prompt: %w", err)
+		return "", errors.WithStack(err)
 	}
 
 	outMessage, err := ca.optimizerModel.Generate(ctx, messages)
 	if err != nil {
-		return "", errors.Errorf("failed to generate response: %w", err)
+		return "", errors.WithStack(err)
 	}
 	if err := json.Unmarshal([]byte(outMessage.Content), &result); err != nil {
-		return "", errors.Errorf("failed to unmarshal response: %w", err)
+		return "", errors.WithStack(err)
 	}
 
 	if result.Confidence < 0.7 {
@@ -87,11 +93,11 @@ func (ca *RequestOptimizer) reqContentClassification(ctx context.Context, conten
 }
 
 // reqExtraction 提取请求参数.
-func (ca *RequestOptimizer) reqExtraction(ctx context.Context, contentType string, req *types.CollectKnowledgeRequest) (*models.OptimizedRequest, error) {
+func (ca *RequestOptimizer) reqExtraction(ctx context.Context, contentType string, req *types.CollectKnowledgeRequest) (string, error) {
 	result := models.OptimizedRequest{ContentType: contentType}
 	params := map[string]interface{}{
-		"origin_request_desc": req.GetDescription(),
-		"output_desc":         result.GetDescription(),
+		"origin_request": req.GetDescription(),
+		"output_desc":    result.GetDescription(),
 	}
 
 	var (
@@ -108,20 +114,19 @@ func (ca *RequestOptimizer) reqExtraction(ctx context.Context, contentType strin
 		messages, err = models.PromptDocumentExtraction.Format(ctx, params)
 	}
 	if err != nil {
-		return nil, errors.Errorf("failed to format prompt: %w", err)
+		return "", errors.WithStack(err)
 	}
 
 	outMessage, err := ca.optimizerModel.Generate(ctx, messages)
 	if err != nil {
-		return nil, errors.Errorf("failed to generate response: %w", err)
+		return "", errors.WithStack(err)
 	}
-
+	// validate result.
 	if err := json.Unmarshal([]byte(outMessage.Content), &result); err != nil {
-		return nil, errors.Errorf("failed to unmarshal response: %w", err)
+		return "", errors.WithStack(err)
 	}
-	result.ContentType = contentType
 
-	return &result, nil
+	return outMessage.Content, nil
 }
 
 // optimizeConversation 优化对话请求

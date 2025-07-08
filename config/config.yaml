@@ -25,8 +25,10 @@ neo4j:
   password: "neo4jpassword"
 
 eino:
-  api_key: ""  # 从环境变量或配置中获取
-  model: "gpt-3.5-turbo"
+  optimizer:
+    base_url: "https://ark.cn-beijing.volces.com/api/v3"
+    api_key: "b6582d68-9832-410b-ac22-acf3b60f50f2"  # 从环境变量或配置中获取
+    model: "ep-20250707170043-q9254"
 
 # 日志配置
 logging:

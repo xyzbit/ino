@@ -18,7 +18,7 @@ import (
 
 func main() {
 	// 加载配置
-	config.Init()
+	config.Init("../config")
 
 	// 设置Gin模式
 	if config.AppConfig.Server.Mode == "release" {

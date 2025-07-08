@@ -52,9 +52,9 @@ var PromptContentTypeClassification = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(`你是一个专业的内容类型识别和信息提取专家。你的任务是分析用户输入的内容，判断其类型，并提取相应的结构化信息。
 
 支持的内容类型：
-1. conversation（对话）：包含多轮对话、讨论记录、会议纪要等
-2. feedback（反馈）：包含用户评价、意见反馈、评分评论等  
-3. document（文档）：包含文档信息、链接、文件描述等
+1. conversation(对话):包含多轮对话、讨论记录、会议纪要等
+2. feedback(反馈):包含用户评价、意见反馈、评分评论等  
+3. document(文档):包含文档信息、链接、文件描述等
 
 分析要求：
 - 准确识别内容类型（置信度 > 0.7）
@@ -68,7 +68,7 @@ var PromptContentTypeClassification = prompt.FromMessages(schema.FString,
 `),
 
 	// 用户消息模板
-	schema.UserMessage(`请分析以下内容并提取信息：{origin_request_desc}
+	schema.UserMessage(`请分析以下内容并提取信息：{origin_request}
 
 请返回JSON格式的分析结果。`),
 )
@@ -80,18 +80,18 @@ var PromptConversationExtraction = prompt.FromMessages(schema.FString,
 提取规则：
 1. 识别所有参与对话的人员
 2. 按时间顺序提取每条消息
-3. 尝试推断消息的角色类型（user/assistant/system）
+3. 尝试推断消息的角色类型(user/assistant/system)
 4. 提取对话主题和上下文信息
 
 避免事项：
-1. 无法提取和分析的内容，不要瞎编，直接返回空
+1. 无法提取或分析的部分，不要瞎编，直接返回空
 
 输出格式：
 {output_desc}
 严格按照 JSON 格式返回.
 `),
 
-	schema.UserMessage(`{description}
+	schema.UserMessage(`{origin_request}
 
 请从上述内容中提取对话信息：`),
 )
@@ -101,19 +101,19 @@ var PromptFeedbackExtraction = prompt.FromMessages(schema.FString,
 	schema.SystemMessage(`你是用户反馈分析专家。请从给定文本中提取反馈信息，包括情感倾向、评分和具体原因。
 
 分析规则：
-1. 判断反馈类型：positive（正面）、negative（负面）、neutral（中性）
-2. 如果有明确评分，提取数字评分（1-5分）
+1. 判断反馈类型: positive(正面)、negative(负面)、neutral(中性)
+2. 如果有明确评分，提取数字评分(1-5分)
 3. 总结反馈的具体原因
 4. 识别相关的查询或上下文
 
 避免事项：
-1. 无法提取和分析的内容，不要瞎编，直接返回空
+1. 无法提取或分析的部分，不要瞎编，直接返回空
 
 输出格式：
 {output_desc}
 严格按照 JSON 格式返回.`),
 
-	schema.UserMessage(`{description}
+	schema.UserMessage(`{origin_request}
 
 请从上述内容中提取反馈信息：`),
 )
@@ -125,18 +125,19 @@ var PromptDocumentExtraction = prompt.FromMessages(schema.FString,
 提取规则：
 1. 识别文档标题或名称
 2. 提取文档描述或摘要
-3. 查找文档链接或路径
-4. 判断文档类型
+3. 查找文档链接或路径(可能原始内容也可能是链接)
+4. 判断文档类型(无法判断时则为 markdown)
+5. 根据文档类型进行格式优化
 5. 提取相关标签
 
 避免事项：
-1. 无法提取和分析的内容，不要瞎编，直接返回空
+1. 无法提取或分析的部分，不要瞎编，直接返回空
 
 输出格式：
 {output_desc}
 严格按照 JSON 格式返回.`),
 
-	schema.UserMessage(`{description}
+	schema.UserMessage(`{origin_request}
 
 请从上述内容中提取文档信息：`),
 )

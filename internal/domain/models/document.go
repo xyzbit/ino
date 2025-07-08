@@ -21,6 +21,7 @@ type Document struct {
 	Title       string                 `json:"title"`
 	Summary     string                 `json:"summary"`
 	ContentType string                 `json:"content_type"`
+	Content     string                 `json:"content"`
 	FilePath    string                 `json:"file_path"`
 	FileSize    int64                  `json:"file_size"`
 	Metadata    map[string]interface{} `json:"metadata"`
@@ -31,6 +32,7 @@ type Document struct {
 	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
+// TODO: 优化描述格式(1. GetPromptDesc() 2. openapi 格式给文档，给出可能的值等等)
 func (d *Document) GetDescription() string {
 	return `
 	{
@@ -38,6 +40,7 @@ func (d *Document) GetDescription() string {
 		"title": "文档标题", // 文档标题
 		"summary": "文档摘要", // 文档摘要
 		"content_type": "markdown", // 文档内容类型, markdown|pdf|word|excel|ppt|txt|image|video|audio
+		"content": "文档内容", // 文档内容
 		"file_path": "https://example.com/document.txt", // 文档文件路径
 		"file_size": 1024, // 文档文件大小, 单位: 字节
 		"metadata": { // 文档元数据, 可选

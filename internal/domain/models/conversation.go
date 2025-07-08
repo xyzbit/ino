@@ -12,7 +12,6 @@ type Conversation struct {
 	Domain    string    `json:"domain"`
 	Tags      []string  `json:"tags"`
 	Context   string    `json:"context"`
-	Messages  []Message `json:"messages"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -32,12 +31,4 @@ func (c *Conversation) GetDescription() string {
 		"created_at": "2025-07-07T09:15:00Z" // 对话创建时间 格式：2025-07-07T09:15:00Z
 	}
 	`
-}
-
-// Message 消息
-type Message struct {
-	ID      string    `json:"id"`
-	Role    string    `json:"role"` // user, assistant, system
-	Content string    `json:"content"`
-	Time    time.Time `json:"time"`
 }
