@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
 	"github.com/xyzbit/ino/internal/domain/services"
 )
@@ -17,17 +16,13 @@ type OpenAPI struct {
 }
 
 func NewOpenAPI() *OpenAPI {
-	var requestOptimizer *services.RequestOptimizer
-	if config.AppConfig.Eino.Optimizer.BaseURL != "" {
-		optimizer, err := services.NewRequestOptimizer()
-		if err != nil {
-			panic(err)
-		}
-		requestOptimizer = optimizer
+	optimizer, err := services.NewRequestOptimizer()
+	if err != nil {
+		panic(err)
 	}
 
 	return &OpenAPI{
-		requestOptimizer: requestOptimizer,
+		requestOptimizer: optimizer,
 	}
 }
 
@@ -47,15 +42,14 @@ func (o *OpenAPI) CollectKnowledge(c *gin.Context) {
 	}
 
 	// optimize request if enabled.
-	if o.requestOptimizer != nil {
-		req, err = o.requestOptimizer.Exec(c.Request.Context(), req)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "内容优化失败: " + err.Error(),
-			})
-			return
-		}
+	req, err = o.requestOptimizer.Exec(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "内容优化失败: " + err.Error(),
+		})
+		return
 	}
+
 	jsonData, _ := json.MarshalIndent(req, "", "  ")
 	log.Printf("CollectKnowledge request: %s", string(jsonData))
 

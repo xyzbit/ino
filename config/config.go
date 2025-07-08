@@ -13,7 +13,10 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	Milvus   MilvusConfig   `mapstructure:"milvus"`
 	Neo4j    Neo4jConfig    `mapstructure:"neo4j"`
-	Eino     EinoConfig     `mapstructure:"eino"`
+
+	Optimizer OptimizerConfig `mapstructure:"optimizer"`
+	Indexer   IndexerConfig   `mapstructure:"indexer"`
+	Retriever RetrieverConfig `mapstructure:"retriever"`
 }
 
 // ServerConfig 服务器配置
@@ -52,12 +55,19 @@ type Neo4jConfig struct {
 	Password string `mapstructure:"password"`
 }
 
-// EinoConfig Eino AI配置
-type EinoConfig struct {
-	Optimizer        LLMConfig `mapstructure:"optimizer"`         // 优化器，可选
-	IndexerEmbeding  LLMConfig `mapstructure:"indexer_embedding"` // 索引器嵌入，必填
-	IndexerExtractor LLMConfig `mapstructure:"indexer_extractor"` // 索引器提取，必填
-	Retriever        LLMConfig `mapstructure:"retriever"`         // 检索器，必填
+type OptimizerConfig struct {
+	Enabled bool      `mapstructure:"enabled"`
+	LLM     LLMConfig `mapstructure:"llm"`
+}
+
+type IndexerConfig struct {
+	Embedding LLMConfig `mapstructure:"embedding"`
+	Extractor LLMConfig `mapstructure:"extractor"`
+}
+
+type RetrieverConfig struct {
+	MaxRounds int       `mapstructure:"max_rounds"`
+	LLM       LLMConfig `mapstructure:"llm"`
 }
 
 type LLMConfig struct {

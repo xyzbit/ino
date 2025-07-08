@@ -86,20 +86,6 @@ type FeedbackRepository interface {
 	CountByType(ctx context.Context, feedbackType models.FeedbackType) (int64, error)
 }
 
-// SearchLogRepository 搜索日志仓储接口
-type SearchLogRepository interface {
-	Create(ctx context.Context, log *models.SearchLog) error
-	GetByID(ctx context.Context, id uint64) (*models.SearchLog, error)
-	GetByQueryID(ctx context.Context, queryID string) (*models.SearchLog, error)
-	Update(ctx context.Context, log *models.SearchLog) error
-	Delete(ctx context.Context, id uint64) error
-	List(ctx context.Context, offset, limit int) ([]*models.SearchLog, error)
-	ListByUser(ctx context.Context, userID uint64, offset, limit int) ([]*models.SearchLog, error)
-	ListByDomain(ctx context.Context, domainID uint64, offset, limit int) ([]*models.SearchLog, error)
-	Count(ctx context.Context) (int64, error)
-	GetStats(ctx context.Context) (*models.SearchStats, error)
-}
-
 // VectorRepository 向量数据库仓储接口
 type VectorRepository interface {
 	// 集合管理
@@ -208,7 +194,6 @@ type Repository struct {
 	DocumentChunk DocumentChunkRepository
 	Conversation  ConversationRepository
 	Feedback      FeedbackRepository
-	SearchLog     SearchLogRepository
 	Vector        VectorRepository
 	Graph         GraphRepository
 	Cache         CacheRepository

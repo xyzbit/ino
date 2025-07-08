@@ -4,12 +4,15 @@ go 1.23.10
 
 require (
 	github.com/cloudwego/eino v0.3.48
+	github.com/cloudwego/eino-ext/components/document/loader/file v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585
 	github.com/gin-gonic/gin v1.10.1
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
+	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/spf13/viper v1.20.1
+	golang.org/x/sync v0.15.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
 )
@@ -63,7 +66,6 @@ require (
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/perimeterx/marshmallow v1.1.4 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -85,7 +87,6 @@ require (
 	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241223144023-3abc09e42ca8 // indirect

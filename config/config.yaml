@@ -24,8 +24,10 @@ neo4j:
   username: "neo4j"
   password: "neo4jpassword"
 
-eino:
-  optimizer:
+
+optimizer:
+  enabled: true
+  llm:
     base_url: "https://ark.cn-beijing.volces.com/api/v3"
     api_key: "b6582d68-9832-410b-ac22-acf3b60f50f2"  # 从环境变量或配置中获取
     model: "ep-20250707170043-q9254"

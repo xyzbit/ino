@@ -5,12 +5,14 @@ import "encoding/json"
 type CollectKnowledgeRequest struct {
 	// 必填，知识库ID
 	CollectionID string `json:"collection_id,omitempty"`
-	// 可选，知识内容涉及的标签, 不同维度的标识内容
-	Tags map[string]string `json:"tags,omitempty"`
-	// 可选，知识内容类型, 可选值: conversation, feedback, document
-	ContentType string `json:"content_type,omitempty"`
 	// 必填，知识内容
 	Content string `json:"content,omitempty"`
+	// 必填，知识内容链接 （知识内容和知识内容链接二选一）
+	ContentLink string `json:"content_link,omitempty"`
+	// 可选，知识内容类型, 可选值: conversation, feedback, document
+	ContentType string `json:"content_type,omitempty"`
+	// 可选，知识内容涉及的标签, 不同维度的标识内容
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 func (c *CollectKnowledgeRequest) GetDescription() string {

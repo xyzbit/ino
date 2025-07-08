@@ -23,7 +23,11 @@ type RequestOptimizer struct {
 
 // NewRequestOptimizer 创建请求优化器实例
 func NewRequestOptimizer() (*RequestOptimizer, error) {
-	optimizerConfig := config.AppConfig.Eino.Optimizer
+	if !config.AppConfig.Optimizer.Enabled {
+		return &RequestOptimizer{}, nil
+	}
+
+	optimizerConfig := config.AppConfig.Optimizer.LLM
 	optimizerModel, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
 		BaseURL: optimizerConfig.BaseURL,
 		Model:   optimizerConfig.Model,
@@ -40,6 +44,10 @@ func NewRequestOptimizer() (*RequestOptimizer, error) {
 
 // AnalyzeContent 分析内容类型并提取信息
 func (ca *RequestOptimizer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) (*types.CollectKnowledgeRequest, error) {
+	if !config.AppConfig.Optimizer.Enabled {
+		return req, nil
+	}
+
 	// classify auto content type.
 	contentType, err := ca.reqContentClassification(ctx, req.ContentType, req)
 	if err != nil {
