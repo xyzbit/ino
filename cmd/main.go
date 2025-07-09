@@ -12,8 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi"
-	"github.com/xyzbit/ino/internal/infra"
 	"github.com/xyzbit/ino/internal/server"
+	"github.com/xyzbit/ino/pkg/infra"
 )
 
 func main() {

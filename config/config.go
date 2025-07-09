@@ -14,7 +14,6 @@ type Config struct {
 	Milvus   MilvusConfig   `mapstructure:"milvus"`
 	Neo4j    Neo4jConfig    `mapstructure:"neo4j"`
 
-	Optimizer OptimizerConfig `mapstructure:"optimizer"`
 	Indexer   IndexerConfig   `mapstructure:"indexer"`
 	Retriever RetrieverConfig `mapstructure:"retriever"`
 }
@@ -53,11 +52,6 @@ type Neo4jConfig struct {
 	URI      string `mapstructure:"uri"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
-}
-
-type OptimizerConfig struct {
-	Enabled bool      `mapstructure:"enabled"`
-	LLM     LLMConfig `mapstructure:"llm"`
 }
 
 type IndexerConfig struct {

@@ -2,56 +2,58 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/eino-ext/components/document/loader/file"
+	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown"
+	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
+	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
-	"github.com/xyzbit/ino/internal/domain/models"
 	"golang.org/x/sync/errgroup"
+
+	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
+	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
+	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
 )
 
 // Indexer 索引器
 type Indexer struct {
-	embeddingModel *openai.ChatModel
-	extractorModel *openai.ChatModel
+	vectorIndexer indexer.Indexer
+	graphIndexer  indexer.Indexer
+	autoSpliter   document.Transformer
 }
 
-// NewRequestOptimizer 创建请求优化器实例
+// NewIndexer 创建索引器实例
 func NewIndexer() (*Indexer, error) {
-	embeddingConfig := config.AppConfig.Indexer.Embedding
-	extractorConfig := config.AppConfig.Indexer.Extractor
-	embeddingModel, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
-		BaseURL: embeddingConfig.BaseURL,
-		Model:   embeddingConfig.Model,
-		APIKey:  embeddingConfig.APIKey,
-	})
+	vectorIndexer, err := newVectorIndexer(context.Background())
 	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	extractorModel, err := openai.NewChatModel(context.Background(), &openai.ChatModelConfig{
-		BaseURL: extractorConfig.BaseURL,
-		Model:   extractorConfig.Model,
-		APIKey:  extractorConfig.APIKey,
-	})
-	extractorModel.WithTools([]*schema.ToolInfo{
-		{
-			Name:        "extract_entity_and_relation",
-			Description: "提取实体和关系",
-			Parameters:  schema.FString,
-		},
-	})
-	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, err
 	}
 
+	graphIndexer, err := newGraphIndexer(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	autoSpliter, err := newAutoSpliter(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	compose.RegisterValuesMergeFunc()
+
 	return &Indexer{
-		embeddingModel: embeddingModel,
-		extractorModel: extractorModel,
+		vectorIndexer: vectorIndexer,
+		graphIndexer:  graphIndexer,
+		autoSpliter:   autoSpliter,
 	}, nil
 }
 
@@ -74,81 +76,162 @@ func (i *Indexer) addtoVectorStore(ctx context.Context, req *types.CollectKnowle
 }
 
 func (i *Indexer) addtoGraphStore(ctx context.Context, req *types.CollectKnowledgeRequest) error {
-	// 1. 大模型提取知识中的实体和关系内容
-	i.extractEntityAndRelation(ctx, req)
-	// 2. 查询知识图谱，获取相关知识
-	// i.searchRelatedKnowledge(ctx, req)
-	// 3. 大模型判断相关知识和当前请求是否存在冲突，获取需要删除内容
-	// i.getConflictKnowledge(ctx, req)
-	// 4. 更新知识图谱
+	runner, err := i.buildKnowledgeIndexing(ctx)
+	if err != nil {
+		return err
+	}
+	ids, err := runner.Invoke(ctx, req)
+	if err != nil {
+		return err
+	}
+	fmt.Println(ids)
 
 	return nil
 }
 
-func (i *Indexer) extractEntityAndRelation(ctx context.Context, req *types.CollectKnowledgeRequest) error {
-	msgs, err := models.PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
-		"origin_request": req.Content,
-	})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	output, err := i.extractorModel.Generate(ctx, msgs)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	for _, toolCall := range output.ToolCalls {
-		// if toolCall.ToolName == "extract_entity_and_relation" {
-		// 	entityAndRelation := toolCall.ToolCallID
-		// 	fmt.Println(entityAndRelation)
-		// }
-	}
-
-	return nil
-}
-
-func BuildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, []string], err error) {
+func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, []string], err error) {
 	const (
-		FileLoader       = "FileLoader"
-		MarkdownSplitter = "MarkdownSplitter"
-		RedisIndexer     = "RedisIndexer"
+		RequestToDocs = "RequestToDocs"
+		AutoSpliter   = "AutoSpliter"
+		MilvusIndexer = "MilvusIndexer"
+		Neo4jIndexer  = "Neo4jIndexer"
 	)
-	g := compose.NewGraph[document.Source, []string]()
-	fileLoaderKeyOfLoader, err := newLoader(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_ = g.AddLoaderNode(FileLoader, fileLoaderKeyOfLoader)
-	markdownSplitterKeyOfDocumentTransformer, err := newDocumentTransformer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_ = g.AddDocumentTransformerNode(MarkdownSplitter, markdownSplitterKeyOfDocumentTransformer)
-	redisIndexerKeyOfIndexer, err := newIndexer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_ = g.AddIndexerNode(RedisIndexer, redisIndexerKeyOfIndexer)
-	_ = g.AddEdge(compose.START, FileLoader)
-	_ = g.AddEdge(FileLoader, MarkdownSplitter)
-	_ = g.AddEdge(MarkdownSplitter, RedisIndexer)
-	_ = g.AddEdge(RedisIndexer, compose.END)
+	g := compose.NewGraph[*types.CollectKnowledgeRequest, []string]()
+
+	// add node
+	_ = g.AddLambdaNode(RequestToDocs, compose.InvokableLambdaWithOption(newRequestToDocs))
+	_ = g.AddDocumentTransformerNode(AutoSpliter, i.autoSpliter)
+	_ = g.AddIndexerNode(MilvusIndexer, i.vectorIndexer)
+	_ = g.AddIndexerNode(Neo4jIndexer, i.graphIndexer)
+	// add edge
+	_ = g.AddEdge(compose.START, RequestToDocs)
+	_ = g.AddEdge(RequestToDocs, AutoSpliter)
+	_ = g.AddEdge(AutoSpliter, MilvusIndexer)
+	_ = g.AddEdge(AutoSpliter, Neo4jIndexer)
+	_ = g.AddEdge(MilvusIndexer, compose.END)
+	_ = g.AddEdge(Neo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
 	if err != nil {
 		return nil, err
 	}
+
 	return r, err
 }
 
-// newLoader component initialization function of node 'FileLoader' in graph 'KnowledgeIndexing'
-func newLoader(ctx context.Context) (ldr document.Loader, err error) {
-	// TODO Modify component configuration here.
+func newRequestToDocs(ctx context.Context, input *types.CollectKnowledgeRequest, opts ...any) (output []*schema.Document, err error) {
+	if input.Content != "" {
+		return []*schema.Document{
+			{
+				Content: input.Content,
+			},
+		}, nil
+	}
 	config := &file.FileLoaderConfig{}
-	ldr, err = file.NewFileLoader(ctx, config)
+	ldr, err := file.NewFileLoader(ctx, config)
 	if err != nil {
 		return nil, err
 	}
-	return ldr, nil
+
+	docs, err := ldr.Load(ctx, document.Source{
+		URI: input.ContentLink,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return docs, nil
+}
+
+// TODO: 自动分段器,后续让大模型根据内容自动选择分段器（markdown、html、recursive、semantic）
+type AutoSpliter struct {
+	markdownSplitter  document.Transformer
+	recursiveSplitter document.Transformer
+}
+
+func (a *AutoSpliter) Transform(ctx context.Context, src []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
+	if len(src) == 0 {
+		return src, nil
+	}
+
+	doc := src[0]
+	if doc.MetaData[file.MetaKeyExtension] == ".md" || doc.MetaData[file.MetaKeyExtension] == "md" {
+		return a.markdownSplitter.Transform(ctx, src, opts...)
+	}
+
+	return a.recursiveSplitter.Transform(ctx, src, opts...)
+}
+
+// newAutoSpliter
+func newAutoSpliter(ctx context.Context) (tfr document.Transformer, err error) {
+	config := &markdown.HeaderConfig{
+		Headers:     map[string]string{"##": "headerNameOfLevel2"},
+		TrimHeaders: false,
+	}
+	mkdSplitter, err := markdown.NewHeaderSplitter(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	recursiveSplitter, err := recursive.NewSplitter(ctx, &recursive.Config{
+		ChunkSize:   1500,
+		OverlapSize: 300,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &AutoSpliter{
+		markdownSplitter:  mkdSplitter,
+		recursiveSplitter: recursiveSplitter,
+	}, nil
+}
+
+func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
+	embeddingConfig := config.AppConfig.Indexer.Embedding
+	// Create an embedding model
+	emb, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		BaseURL: embeddingConfig.BaseURL,
+		APIKey:  embeddingConfig.APIKey,
+		Model:   embeddingConfig.Model,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an indexer
+	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+		Client:    milvusClient.Client,
+		Embedding: emb,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return indexer, nil
+}
+
+func newGraphIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
+	extractorConfig := config.AppConfig.Indexer.Extractor
+
+	// Create an extractor model
+	extractorModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		BaseURL: extractorConfig.BaseURL,
+		Model:   extractorConfig.Model,
+		APIKey:  extractorConfig.APIKey,
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	// Create a Neo4j indexer
+	graphIndexer, err := neo4jIndexer.NewIndexer(ctx, &neo4jIndexer.IndexerConfig{
+		Driver:          neo4jClient.Driver,
+		Database:        "neo4j",
+		EntityExtractor: extractorModel,
+		BatchSize:       50,
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return graphIndexer, nil
 }
