@@ -1,8 +1,6 @@
 package indexer
 
-type StoreRequest struct {
-	StorePairs []StorePair `json:"store_pairs"`
-}
+type StorePairs []StorePair
 
 type StorePair struct {
 	From     Entity   `json:"from"`

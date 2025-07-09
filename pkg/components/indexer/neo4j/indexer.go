@@ -49,6 +49,10 @@ type IndexerConfig struct {
 	// Required
 	EntityExtractor model.ToolCallingChatModel
 
+	// DocumentConverter is the model used to convert documents to entities and relations
+	// Required
+	DocumentConverter func(ctx context.Context, docs []*schema.Document) ([]*StoreRequest, error)
+
 	// MaxRetries is the maximum number of retries for failed operations
 	// Optional, default is 3
 	MaxRetries int
@@ -60,14 +64,6 @@ type IndexerConfig struct {
 	// BatchSize is the number of documents to process in one batch
 	// Optional, default is 100
 	BatchSize int
-
-	// DefaultEntityType is the default entity type if not specified
-	// Optional, default is "Document"
-	DefaultEntityType string
-
-	// DefaultRelationType is the default relation type if not specified
-	// Optional, default is "CONTAINS"
-	DefaultRelationType string
 }
 
 type Indexer struct {
@@ -376,27 +372,26 @@ func (i *Indexer) storeRelation(ctx context.Context, session neo4j.SessionWithCo
 }
 
 // getDefaultDocumentConverter returns the default document converter
-func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, docs []*schema.Document) ([]*StoreRequest, error) {
-	return func(ctx context.Context, docs []*schema.Document) ([]*StoreRequest, error) {
-		var storePairs []*StorePair
+// TODO: 默认添加一个来源于哪个文档id或摘要的关系.
+func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, docs []*schema.Document) (StorePairs, error) {
+	return func(ctx context.Context, docs []*schema.Document) (StorePairs, error) {
+		results := make(StorePairs, 0)
 
 		for _, doc := range docs {
-			// Extract entities and relations using LLM
-			extractedEntities, extractedRelations, err := i.extractEntitiesAndRelations(ctx, doc)
+			storePairs, err := i.extractEntitiesAndRelations(ctx, doc)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to extract entities and relations: %w", err)
+				return nil, err
 			}
 
-			storePairs = append(storePairs, extractedEntities...)
-			storePairs = append(storePairs, extractedRelations...)
+			results = append(results, storePairs...)
 		}
 
-		return entities, relations, nil
+		return results, nil
 	}
 }
 
 // extractEntitiesAndRelations extracts entities and relations from a document using LLM
-func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (*StoreRequest, error) {
+func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (StorePairs, error) {
 	// Use the prompt from models to extract entities and relations
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
@@ -405,7 +400,7 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 		return nil, errors.WithStack(err)
 	}
 
-	toolInfo, err := utils.GoStruct2ToolInfo[*StoreRequest](
+	toolInfo, err := utils.GoStruct2ToolInfo[StorePairs](
 		"store_entity_and_relation",
 		"保存提取的实体和关系, Store entities and relations based on the provided text.",
 	)
@@ -418,114 +413,20 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+
+	pairs := make(StorePairs, 0)
 	for _, toolCall := range output.ToolCalls {
 		if toolCall.Function.Name != "store_entity_and_relation" {
 			continue
 		}
 
-		storeRequest := &StoreRequest{}
-		if err := sonic.Unmarshal([]byte(toolCall.Function.Arguments), storeRequest); err != nil {
+		if err := sonic.Unmarshal([]byte(toolCall.Function.Arguments), pairs); err != nil {
 			return nil, errors.WithStack(err)
 		}
-
+		pairs = append(pairs, pairs...)
 	}
 
-	// Parse the extraction result
-	var extractionResult struct {
-		Entities []struct {
-			Name       string                 `json:"name"`
-			Type       string                 `json:"type"`
-			Properties map[string]interface{} `json:"properties"`
-			Labels     []string               `json:"labels"`
-			Score      float64                `json:"score"`
-		} `json:"entities"`
-		Relations []struct {
-			From       string                 `json:"from"`
-			To         string                 `json:"to"`
-			Type       string                 `json:"type"`
-			Properties map[string]interface{} `json:"properties"`
-			Score      float64                `json:"score"`
-		} `json:"relations"`
-	}
-
-	if err := sonic.Unmarshal([]byte(output.Content), &extractionResult); err != nil {
-		// If JSON parsing fails, create a simple document entity
-		return i.createDocumentEntity(doc), nil, nil
-	}
-
-	now := time.Now()
-	var entities []*models.KnowledgeEntity
-	var relations []*models.KnowledgeRelation
-
-	// Convert entities
-	for _, e := range extractionResult.Entities {
-		entity := &models.KnowledgeEntity{
-			ID:         generateEntityID(e.Name, e.Type),
-			Name:       e.Name,
-			Type:       e.Type,
-			Labels:     e.Labels,
-			Properties: e.Properties,
-			Source:     getDocumentSource(doc),
-			Score:      e.Score,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-
-		if entity.Type == "" {
-			entity.Type = i.DefaultEntityType
-		}
-
-		entities = append(entities, entity)
-	}
-
-	// Convert relations
-	for _, r := range extractionResult.Relations {
-		relation := &models.KnowledgeRelation{
-			ID:         generateRelationID(r.From, r.To, r.Type),
-			Type:       r.Type,
-			FromEntity: generateEntityID(r.From, ""),
-			ToEntity:   generateEntityID(r.To, ""),
-			Properties: r.Properties,
-			Source:     getDocumentSource(doc),
-			Score:      r.Score,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-
-		if relation.Type == "" {
-			relation.Type = i.DefaultRelationType
-		}
-
-		relations = append(relations, relation)
-	}
-
-	// If no entities were extracted, create a document entity
-	if len(entities) == 0 {
-		entities = i.createDocumentEntity(doc)
-	}
-
-	return entities, relations, nil
-}
-
-// createDocumentEntity creates a simple document entity
-func (i *IndexerConfig) createDocumentEntity(doc *schema.Document) []*models.KnowledgeEntity {
-	now := time.Now()
-
-	entity := &models.KnowledgeEntity{
-		ID:   generateEntityID(doc.ID, "Document"),
-		Name: getDocumentTitle(doc),
-		Type: i.DefaultEntityType,
-		Properties: map[string]interface{}{
-			"content":  doc.Content,
-			"metadata": doc.MetaData,
-		},
-		Source:    getDocumentSource(doc),
-		Score:     1.0,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	return []*models.KnowledgeEntity{entity}
+	return pairs, nil
 }
 
 // createIndexes creates necessary indexes for better performance
@@ -579,12 +480,6 @@ func (i *IndexerConfig) check() error {
 	}
 	if i.BatchSize <= 0 {
 		i.BatchSize = 100
-	}
-	if i.DefaultEntityType == "" {
-		i.DefaultEntityType = "Document"
-	}
-	if i.DefaultRelationType == "" {
-		i.DefaultRelationType = "CONTAINS"
 	}
 	if i.DocumentConverter == nil {
 		i.DocumentConverter = i.getDefaultDocumentConverter()
