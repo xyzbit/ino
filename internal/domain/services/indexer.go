@@ -14,11 +14,13 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/xyzbit/ino/pkg/components/extractor/konwledge"
 	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
 	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
 	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
@@ -29,6 +31,7 @@ type Indexer struct {
 	vectorIndexer indexer.Indexer
 	graphIndexer  indexer.Indexer
 	autoSpliter   document.Transformer
+	extractor     compose.Invoke[[]*schema.Document, []*schema.Document, any]
 }
 
 // NewIndexer 创建索引器实例
@@ -48,12 +51,16 @@ func NewIndexer() (*Indexer, error) {
 		return nil, err
 	}
 
-	compose.RegisterValuesMergeFunc()
+	extractor, err := newKnowledgeExtractor(context.Background())
+	if err != nil {
+		return nil, err
+	}
 
 	return &Indexer{
 		vectorIndexer: vectorIndexer,
 		graphIndexer:  graphIndexer,
 		autoSpliter:   autoSpliter,
+		extractor:     extractor,
 	}, nil
 }
 
@@ -100,11 +107,11 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	g := compose.NewGraph[*types.CollectKnowledgeRequest, []string]()
 
 	// add node
-	_ = g.AddLambdaNode(RequestToDocs, compose.InvokableLambdaWithOption(newRequestToDocs))
+	_ = g.AddLambdaNode(RequestToDocs, compose.InvokableLambdaWithOption(requestToDocs))
 	_ = g.AddDocumentTransformerNode(AutoSpliter, i.autoSpliter)
 	_ = g.AddIndexerNode(MilvusIndexer, i.vectorIndexer)
 	_ = g.AddIndexerNode(Neo4jIndexer, i.graphIndexer)
-	_ = g.AddLambdaNode(KnowledgeExtractor, compose.InvokableLambdaWithOption(newKnowledgeExtractor))
+	_ = g.AddLambdaNode(KnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
 	// add edge
 	_ = g.AddEdge(compose.START, RequestToDocs)
 	_ = g.AddEdge(RequestToDocs, AutoSpliter)
@@ -122,15 +129,16 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	return r, err
 }
 
-func newRequestToDocs(ctx context.Context, input *types.CollectKnowledgeRequest, opts ...any) (output []*schema.Document, err error) {
+func requestToDocs(ctx context.Context, input *types.CollectKnowledgeRequest, opts ...any) (output []*schema.Document, err error) {
 	if input.Content != "" {
 		return []*schema.Document{
 			{
+				ID:      uuid.New().String(),
 				Content: input.Content,
 			},
 		}, nil
 	}
-	config := &file.FileLoaderConfig{}
+	config := &file.FileLoaderConfig{UseNameAsID: true}
 	ldr, err := file.NewFileLoader(ctx, config)
 	if err != nil {
 		return nil, err
@@ -189,8 +197,26 @@ func newAutoSpliter(ctx context.Context) (tfr document.Transformer, err error) {
 	}, nil
 }
 
-func newKnowledgeExtractor(ctx context.Context, docs []*schema.Document, opts ...any) (output []*schema.Document, err error) {
+func newKnowledgeExtractor(ctx context.Context) (compose.Invoke[[]*schema.Document, []*schema.Document, any], error) {
+	extractorConfig := config.AppConfig.Indexer.Extractor
 
+	model, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		BaseURL: extractorConfig.BaseURL,
+		Model:   extractorConfig.Model,
+		APIKey:  extractorConfig.APIKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	extractor, err := konwledge.NewExtractor(ctx, &konwledge.Config{
+		Extractor: model,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return extractor.Extract, nil
 }
 
 func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {

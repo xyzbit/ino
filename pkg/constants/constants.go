@@ -1,7 +1,7 @@
 package constants
 
 const (
-	ContentTypeConversation = "conversation"
-	ContentTypeFeedback     = "feedback"
-	ContentTypeDocument     = "document"
+	CategoryKey             = "category"
+	CategoryValueFact       = "fact"
+	CategoryValuePreference = "preference"
 )

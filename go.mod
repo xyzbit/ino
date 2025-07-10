@@ -3,13 +3,16 @@ module github.com/xyzbit/ino
 go 1.23.10
 
 require (
+	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.48
 	github.com/cloudwego/eino-ext/components/document/loader/file v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown v0.0.0-20250708081507-4936951487dd
+	github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive v0.0.0-20250710065240-482d48888f25
 	github.com/cloudwego/eino-ext/components/embedding/ark v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/indexer/milvus v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585
 	github.com/gin-gonic/gin v1.10.1
+	github.com/google/uuid v1.6.0
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
 	github.com/pkg/errors v0.9.1
@@ -22,7 +25,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
@@ -48,7 +50,6 @@ require (
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect

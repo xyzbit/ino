@@ -9,7 +9,6 @@ import (
 func NewRepository(db *gorm.DB) *repository.Repository {
 	return &repository.Repository{
 		User:          NewUserRepository(db),
-		Domain:        NewDomainRepository(db),
 		Document:      NewDocumentRepository(db),
 		DocumentChunk: NewDocumentChunkRepository(db),
 		// 其他仓储将在后续添加

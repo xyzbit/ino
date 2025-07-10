@@ -17,7 +17,7 @@ func RegisterRoutes(r *gin.Engine, openAPI *openapi.OpenAPI, version string) {
 	v1 := r.Group("/api/v1")
 	{
 
-		api := v1.Group("/openapi")
+		api := v1.Group("/openapi", middlewareSetHeaderContext)
 		{
 			// 知识收集接口
 			api.POST("/collect", openAPI.CollectKnowledge)

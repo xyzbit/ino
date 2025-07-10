@@ -218,7 +218,7 @@ func (i *Indexer) storeBatch(ctx context.Context, storePairs StorePairs, opts *I
 // store stores a single pair using the embedding-based similarity search logic
 func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, pair *StorePair, opts *ImplOptions) (string, error) {
 	threshold := opts.SimilarityThreshold
-	if opts
+	// if opts
 
 	embeddingModel := i.config.EmbeddingModel
 	sourceEmbedding, err := embeddingModel.EmbedStrings(ctx, []string{pair.From.Name})
