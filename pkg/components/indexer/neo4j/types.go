@@ -3,9 +3,10 @@ package indexer
 type StorePairs []StorePair
 
 type StorePair struct {
-	From     Entity   `json:"from"`
-	To       Entity   `json:"to"`
-	Relation Relation `json:"relation"`
+	From       Entity   `json:"from"`
+	To         Entity   `json:"to"`
+	Relation   Relation `json:"relation"`
+	Confidence float64  `json:"confidence"`
 }
 
 type Entity struct {

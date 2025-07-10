@@ -24,6 +24,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -31,7 +32,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/pkg/errors"
-	"github.com/xyzbit/ino/internal/domain/models"
+	"github.com/xyzbit/ino/pkg/ctxwarp"
 )
 
 const typ = "neo4j"
@@ -45,13 +46,17 @@ type IndexerConfig struct {
 	// Optional, default is "neo4j"
 	Database string
 
-	// EntityExtractor is the model used to extract entities and relations from documents
+	// Extractor is the model used to extract entities and relations from documents
 	// Required
-	EntityExtractor model.ToolCallingChatModel
+	Extractor model.ToolCallingChatModel
+
+	// EmbeddingModel is the model used to generate embeddings for entities
+	// Required
+	EmbeddingModel embedding.Embedder
 
 	// DocumentConverter is the model used to convert documents to entities and relations
 	// Required
-	DocumentConverter func(ctx context.Context, docs []*schema.Document) ([]*StoreRequest, error)
+	DocumentConverter func(ctx context.Context, docs []*schema.Document) (StorePairs, error)
 
 	// MaxRetries is the maximum number of retries for failed operations
 	// Optional, default is 3
@@ -83,8 +88,8 @@ type ImplOptions struct {
 	// MinConfidence specifies the minimum confidence score for entities/relations
 	MinConfidence float64
 
-	// Source specifies the source of the documents
-	Source string
+	// SimilarityThreshold specifies the threshold for determining similar nodes, default is 0.9
+	SimilarityThreshold float64
 }
 
 // NewIndexer creates a new Neo4j indexer
@@ -112,7 +117,9 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 // Store stores the documents into the Neo4j graph database
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
 	// get impl specific options
-	io := indexer.GetImplSpecificOptions(&ImplOptions{}, opts...)
+	io := indexer.GetImplSpecificOptions(&ImplOptions{
+		SimilarityThreshold: 0.9,
+	}, opts...)
 
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	// callback info on start
@@ -130,43 +137,29 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	}
 
 	// Convert documents to entities and relations
-	entities, relations, err := i.config.DocumentConverter(ctx, docs)
+	addPairs, err := i.config.DocumentConverter(ctx, docs)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
 
-	// TODO: 查询当前数据库中相关的老数据，将老数据和新的数据传递给模型判断哪些数据需要删除。
+	// TODO: 解决冲突，获取相似节点，交给大模型判断是否需要删除。
+	// search_output = self._search_graph_db(node_list=list(entity_type_map.keys()), filters=filters)
+	// to_be_deleted = self._get_delete_entities_from_search_output(search_output, data, filters)
 
 	// Process in batches
 	var allIDs []string
 	batchSize := i.config.BatchSize
 
-	// Process entities
-	for idx := 0; idx < len(entities); idx += batchSize {
+	for idx := 0; idx < len(addPairs); idx += batchSize {
 		end := idx + batchSize
-		if end > len(entities) {
-			end = len(entities)
+		if end > len(addPairs) {
+			end = len(addPairs)
 		}
 
-		batch := entities[idx:end]
-		batchIDs, err := i.storeEntitiesBatch(ctx, batch, io)
+		batch := addPairs[idx:end]
+		batchIDs, err := i.storeBatch(ctx, batch, io)
 		if err != nil {
 			return nil, fmt.Errorf("[Indexer.Store] failed to store entities batch: %w", err)
-		}
-		allIDs = append(allIDs, batchIDs...)
-	}
-
-	// Process relations
-	for idx := 0; idx < len(relations); idx += batchSize {
-		end := idx + batchSize
-		if end > len(relations) {
-			end = len(relations)
-		}
-
-		batch := relations[idx:end]
-		batchIDs, err := i.storeRelationsBatch(ctx, batch, io)
-		if err != nil {
-			return nil, fmt.Errorf("[Indexer.Store] failed to store relations batch: %w", err)
 		}
 		allIDs = append(allIDs, batchIDs...)
 	}
@@ -186,8 +179,8 @@ func (i *Indexer) IsCallbacksEnabled() bool {
 	return true
 }
 
-// storeEntitiesBatch stores a batch of entities
-func (i *Indexer) storeEntitiesBatch(ctx context.Context, entities []*models.KnowledgeEntity, opts *ImplOptions) ([]string, error) {
+// storeBatch stores a batch of entities and relations.
+func (i *Indexer) storeBatch(ctx context.Context, storePairs StorePairs, opts *ImplOptions) ([]string, error) {
 	database := opts.Database
 	if database == "" {
 		database = i.config.Database
@@ -201,23 +194,18 @@ func (i *Indexer) storeEntitiesBatch(ctx context.Context, entities []*models.Kno
 
 	var ids []string
 
-	for _, entity := range entities {
+	for _, pair := range storePairs {
 		// Apply confidence filter
-		if opts.MinConfidence > 0 && entity.Score < opts.MinConfidence {
+		if opts.MinConfidence > 0 && pair.Confidence < opts.MinConfidence {
 			continue
 		}
 
 		// Apply entity type filter
-		if len(opts.EntityTypes) > 0 && !contains(opts.EntityTypes, entity.Type) {
+		if len(opts.EntityTypes) > 0 && (!contains(opts.EntityTypes, pair.From.Type) || !contains(opts.EntityTypes, pair.To.Type)) {
 			continue
 		}
 
-		// Override source if specified
-		if opts.Source != "" {
-			entity.Source = opts.Source
-		}
-
-		id, err := i.storeEntity(ctx, session, entity)
+		id, err := i.store(ctx, session, &pair, opts.SimilarityThreshold)
 		if err != nil {
 			return nil, err
 		}
@@ -227,90 +215,156 @@ func (i *Indexer) storeEntitiesBatch(ctx context.Context, entities []*models.Kno
 	return ids, nil
 }
 
-// storeRelationsBatch stores a batch of relations
-func (i *Indexer) storeRelationsBatch(ctx context.Context, relations []*models.KnowledgeRelation, opts *ImplOptions) ([]string, error) {
-	database := opts.Database
-	if database == "" {
-		database = i.config.Database
+// store stores a single pair using the embedding-based similarity search logic
+func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, pair *StorePair, opts *ImplOptions) (string, error) {
+	threshold := opts.SimilarityThreshold
+	if opts
+
+	embeddingModel := i.config.EmbeddingModel
+	sourceEmbedding, err := embeddingModel.EmbedStrings(ctx, []string{pair.From.Name})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate source embedding: %w", err)
 	}
 
-	session := i.config.Driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode:   neo4j.AccessModeWrite,
-		DatabaseName: database,
-	})
-	defer session.Close(ctx)
-
-	var ids []string
-
-	for _, relation := range relations {
-		// Apply confidence filter
-		if opts.MinConfidence > 0 && relation.Score < opts.MinConfidence {
-			continue
-		}
-
-		// Apply relation type filter
-		if len(opts.RelationTypes) > 0 && !contains(opts.RelationTypes, relation.Type) {
-			continue
-		}
-
-		// Override source if specified
-		if opts.Source != "" {
-			relation.Source = opts.Source
-		}
-
-		id, err := i.storeRelation(ctx, session, relation)
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	destEmbedding, err := embeddingModel.EmbedStrings(ctx, []string{pair.To.Name})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate destination embedding: %w", err)
 	}
 
-	return ids, nil
-}
-
-// storeEntity stores a single entity
-func (i *Indexer) storeEntity(ctx context.Context, session neo4j.SessionWithContext, entity *models.KnowledgeEntity) (string, error) {
-	// Build labels
-	labels := "Entity"
-	if entity.Type != "" {
-		labels += ":" + entity.Type
+	// Search for similar nodes
+	sourceNodeResult, err := i.searchSimilarNode(ctx, session, sourceEmbedding[0], pair.From.Type, threshold)
+	if err != nil {
+		return "", fmt.Errorf("failed to search source node: %w", err)
 	}
-	for _, label := range entity.Labels {
-		if label != "" {
-			labels += ":" + label
+
+	destNodeResult, err := i.searchSimilarNode(ctx, session, destEmbedding[0], pair.To.Type, threshold)
+	if err != nil {
+		return "", fmt.Errorf("failed to search destination node: %w", err)
+	}
+
+	// Prepare agent_id clause for node creation
+	agentIDClause := ""
+	if agentID != "" {
+		agentIDClause = ", agent_id: $agent_id"
+	}
+
+	var cypher string
+	var params map[string]interface{}
+	relationshipType := pair.Relation.Type
+
+	// Build cypher query based on search results
+	if destNodeResult == nil && sourceNodeResult != nil {
+		// Only source node exists
+		cypher = fmt.Sprintf(`
+			MATCH (source:Entity)
+			WHERE id(source) = $source_id
+			MERGE (destination:%s:Entity {name: $destination_name, user_id: $user_id%s})
+			ON CREATE SET
+				destination.created = timestamp(),
+				destination.embedding = $destination_embedding,
+				destination:Entity
+			MERGE (source)-[r:%s]->(destination)
+			ON CREATE SET 
+				r.created = timestamp()
+			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
+		`, pair.To.Type, agentIDClause, relationshipType)
+
+		params = map[string]interface{}{
+			"source_id":             sourceNodeResult.ID,
+			"destination_name":      pair.To.Name,
+			"destination_embedding": destEmbedding[0],
+			"user_id":               userID,
+		}
+		if agentID != "" {
+			params["agent_id"] = agentID
+		}
+
+	} else if destNodeResult != nil && sourceNodeResult == nil {
+		// Only destination node exists
+		cypher = fmt.Sprintf(`
+			MATCH (destination:Entity)
+			WHERE id(destination) = $destination_id
+			MERGE (source:%s:Entity {name: $source_name, user_id: $user_id%s})
+			ON CREATE SET
+				source.created = timestamp(),
+				source.embedding = $source_embedding,
+				source:Entity
+			MERGE (source)-[r:%s]->(destination)
+			ON CREATE SET 
+				r.created = timestamp()
+			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
+		`, pair.From.Type, agentIDClause, relationshipType)
+
+		params = map[string]interface{}{
+			"destination_id":   destNodeResult.ID,
+			"source_name":      pair.From.Name,
+			"source_embedding": sourceEmbedding[0],
+			"user_id":          userID,
+		}
+		if agentID != "" {
+			params["agent_id"] = agentID
+		}
+
+	} else if sourceNodeResult != nil && destNodeResult != nil {
+		// Both nodes exist
+		cypher = fmt.Sprintf(`
+			MATCH (source:Entity)
+			WHERE id(source) = $source_id
+			MATCH (destination:Entity)
+			WHERE id(destination) = $destination_id
+			MERGE (source)-[r:%s]->(destination)
+			ON CREATE SET 
+				r.created_at = timestamp(),
+				r.updated_at = timestamp()
+			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
+		`, relationshipType)
+
+		params = map[string]interface{}{
+			"source_id":      sourceNodeResult.ID,
+			"destination_id": destNodeResult.ID,
+			"user_id":        userID,
+		}
+		if agentID != "" {
+			params["agent_id"] = agentID
+		}
+
+	} else {
+		// Both nodes don't exist
+		cypher = fmt.Sprintf(`
+			MERGE (n:%s:Entity {name: $source_name, user_id: $user_id%s})
+			ON CREATE SET n.created = timestamp(), n.embedding = $source_embedding, n:Entity
+			ON MATCH SET n.embedding = $source_embedding
+			MERGE (m:%s:Entity {name: $dest_name, user_id: $user_id%s})
+			ON CREATE SET m.created = timestamp(), m.embedding = $dest_embedding, m:Entity
+			ON MATCH SET m.embedding = $dest_embedding
+			MERGE (n)-[rel:%s]->(m)
+			ON CREATE SET rel.created = timestamp()
+			RETURN n.name AS source, type(rel) AS relationship, m.name AS target
+		`, pair.From.Type, agentIDClause, pair.To.Type, agentIDClause, relationshipType)
+
+		params = map[string]interface{}{
+			"source_name":      pair.From.Name,
+			"dest_name":        pair.To.Name,
+			"source_embedding": sourceEmbedding[0],
+			"dest_embedding":   destEmbedding[0],
+			"user_id":          userID,
+		}
+		if agentID != "" {
+			params["agent_id"] = agentID
 		}
 	}
 
-	cypher := fmt.Sprintf(`
-		MERGE (e:%s {id: $id})
-		SET e += $props
-		RETURN e.id as id
-	`, labels)
-
-	props := map[string]interface{}{
-		"id":         entity.ID,
-		"name":       entity.Name,
-		"type":       entity.Type,
-		"properties": entity.Properties,
-		"source":     entity.Source,
-		"score":      entity.Score,
-		"created_at": entity.CreatedAt,
-		"updated_at": time.Now(),
-	}
-
+	// Execute the cypher query
 	result, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-		result, err := tx.Run(ctx, cypher, map[string]any{
-			"id":    entity.ID,
-			"props": props,
-		})
+		result, err := tx.Run(ctx, cypher, params)
 		if err != nil {
 			return nil, err
 		}
 
 		if result.Next(ctx) {
 			record := result.Record()
-			if id, found := record.Get("id"); found {
-				return id.(string), nil
+			if source, found := record.Get("source"); found {
+				return fmt.Sprintf("%s_%s", source, relationshipType), nil
 			}
 		}
 
@@ -318,57 +372,75 @@ func (i *Indexer) storeEntity(ctx context.Context, session neo4j.SessionWithCont
 	})
 
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to execute cypher query: %w", err)
 	}
 
 	return result.(string), nil
 }
 
-// storeRelation stores a single relation
-func (i *Indexer) storeRelation(ctx context.Context, session neo4j.SessionWithContext, relation *models.KnowledgeRelation) (string, error) {
+// searchSimilarNode searches for similar nodes using embedding similarity
+func (i *Indexer) searchSimilarNode(ctx context.Context, session neo4j.SessionWithContext, embedding []float64, entityType string, threshold float64) (*SearchResult, error) {
+	// Convert embedding to a format suitable for Neo4j
+	embeddingList := make([]interface{}, len(embedding))
+	for i, v := range embedding {
+		embeddingList[i] = v
+	}
+
+	// Build cypher query to search for similar nodes
 	cypher := `
-		MATCH (from:Entity {id: $from_id}), (to:Entity {id: $to_id})
-		MERGE (from)-[r:RELATION {id: $id}]->(to)
-		SET r += $props
-		RETURN r.id as id
+		MATCH (n:Entity)
+		WHERE n.type = $entity_type AND exists(n.embedding)
+		WITH n, gds.similarity.cosine(n.embedding, $embedding) AS similarity
+		WHERE similarity >= $threshold
+		RETURN id(n) as id, n.name as name, n.type as type, similarity
+		ORDER BY similarity DESC
+		LIMIT 1
 	`
 
-	props := map[string]interface{}{
-		"id":         relation.ID,
-		"type":       relation.Type,
-		"properties": relation.Properties,
-		"source":     relation.Source,
-		"score":      relation.Score,
-		"created_at": relation.CreatedAt,
-		"updated_at": time.Now(),
+	params := map[string]interface{}{
+		"entity_type": entityType,
+		"embedding":   embeddingList,
+		"threshold":   threshold,
 	}
 
-	result, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-		result, err := tx.Run(ctx, cypher, map[string]any{
-			"id":      relation.ID,
-			"from_id": relation.FromEntity,
-			"to_id":   relation.ToEntity,
-			"props":   props,
-		})
+	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+		result, err := tx.Run(ctx, cypher, params)
 		if err != nil {
 			return nil, err
 		}
 
 		if result.Next(ctx) {
 			record := result.Record()
+			searchResult := &SearchResult{}
+
 			if id, found := record.Get("id"); found {
-				return id.(string), nil
+				searchResult.ID = id.(int64)
 			}
+			if name, found := record.Get("name"); found {
+				searchResult.Name = name.(string)
+			}
+			if nodeType, found := record.Get("type"); found {
+				searchResult.Type = nodeType.(string)
+			}
+			if score, found := record.Get("similarity"); found {
+				searchResult.Score = score.(float64)
+			}
+
+			return searchResult, nil
 		}
 
 		return nil, result.Err()
 	})
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return result.(string), nil
+	if result == nil {
+		return nil, nil
+	}
+
+	return result.(*SearchResult), nil
 }
 
 // getDefaultDocumentConverter returns the default document converter
@@ -392,6 +464,14 @@ func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, 
 
 // extractEntitiesAndRelations extracts entities and relations from a document using LLM
 func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (StorePairs, error) {
+	if doc.MetaData["is_preference"] != nil { // is user preference doc.
+		if isPreference := doc.MetaData["is_preference"].(bool); isPreference {
+			header := ctxwarp.GetHeaderContext(ctx)
+			if header == nil || header.User == "" {
+				return StorePairs{}, nil
+			}
+		}
+	}
 	// Use the prompt from models to extract entities and relations
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
@@ -409,7 +489,7 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 	}
 
 	// utils.InferTool("add_user", "add user", AddUser)
-	output, err := i.EntityExtractor.Generate(ctx, msgs, model.WithTools([]*schema.ToolInfo{toolInfo}))
+	output, err := i.Extractor.Generate(ctx, msgs, model.WithTools([]*schema.ToolInfo{toolInfo}))
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -466,8 +546,11 @@ func (i *IndexerConfig) check() error {
 	if i.Driver == nil {
 		return fmt.Errorf("[NewIndexer] Neo4j driver not provided")
 	}
-	if i.EntityExtractor == nil {
+	if i.Extractor == nil {
 		return fmt.Errorf("[NewIndexer] entity extractor not provided")
+	}
+	if i.EmbeddingModel == nil {
+		return fmt.Errorf("[NewIndexer] embedding model not provided")
 	}
 	if i.Database == "" {
 		i.Database = "neo4j"
@@ -480,6 +563,9 @@ func (i *IndexerConfig) check() error {
 	}
 	if i.BatchSize <= 0 {
 		i.BatchSize = 100
+	}
+	if i.SimilarityThreshold <= 0 {
+		i.SimilarityThreshold = 0.9
 	}
 	if i.DocumentConverter == nil {
 		i.DocumentConverter = i.getDefaultDocumentConverter()
@@ -525,4 +611,12 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// SearchResult represents the result of a similarity search
+type SearchResult struct {
+	ID    int64   `json:"id"`
+	Name  string  `json:"name"`
+	Type  string  `json:"type"`
+	Score float64 `json:"score"`
 }

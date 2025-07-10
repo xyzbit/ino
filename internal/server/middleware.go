@@ -1,17 +1,15 @@
 package server
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
+	"github.com/xyzbit/ino/pkg/ctxwarp"
 )
 
-type headerContextKey struct{}
-
-func setHeaderContext(c *gin.Context) {
+func MiddlewareSetHeaderContext(c *gin.Context) {
 	header := &types.CollectKnowledgeRequestHeader{}
 	if err := c.ShouldBindHeader(header); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -20,16 +18,13 @@ func setHeaderContext(c *gin.Context) {
 	if header.RequestID == "" {
 		header.RequestID = uuid.New().String()
 	}
+
 	ctx := c.Request.Context()
-	ctx = context.WithValue(ctx, headerContextKey{}, header)
+	ctx = ctxwarp.SetHeaderContext(ctx, &ctxwarp.HeaderContext{
+		RequestID:    header.RequestID,
+		CollectionID: header.CollectionID,
+		User:         header.User,
+	})
 	c.Request = c.Request.WithContext(ctx)
 	c.Next()
-}
-
-func GetHeaderContext(ctx context.Context) *types.CollectKnowledgeRequestHeader {
-	header := ctx.Value(headerContextKey{})
-	if header == nil {
-		return nil
-	}
-	return header.(*types.CollectKnowledgeRequestHeader)
 }

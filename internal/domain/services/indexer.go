@@ -91,10 +91,11 @@ func (i *Indexer) addtoGraphStore(ctx context.Context, req *types.CollectKnowled
 
 func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, []string], err error) {
 	const (
-		RequestToDocs = "RequestToDocs"
-		AutoSpliter   = "AutoSpliter"
-		MilvusIndexer = "MilvusIndexer"
-		Neo4jIndexer  = "Neo4jIndexer"
+		RequestToDocs      = "RequestToDocs"
+		AutoSpliter        = "AutoSpliter"
+		MilvusIndexer      = "MilvusIndexer"
+		Neo4jIndexer       = "Neo4jIndexer"
+		KnowledgeExtractor = "KnowledgeExtractor"
 	)
 	g := compose.NewGraph[*types.CollectKnowledgeRequest, []string]()
 
@@ -103,11 +104,13 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddDocumentTransformerNode(AutoSpliter, i.autoSpliter)
 	_ = g.AddIndexerNode(MilvusIndexer, i.vectorIndexer)
 	_ = g.AddIndexerNode(Neo4jIndexer, i.graphIndexer)
+	_ = g.AddLambdaNode(KnowledgeExtractor, compose.InvokableLambdaWithOption(newKnowledgeExtractor))
 	// add edge
 	_ = g.AddEdge(compose.START, RequestToDocs)
 	_ = g.AddEdge(RequestToDocs, AutoSpliter)
-	_ = g.AddEdge(AutoSpliter, MilvusIndexer)
-	_ = g.AddEdge(AutoSpliter, Neo4jIndexer)
+	_ = g.AddEdge(AutoSpliter, KnowledgeExtractor)
+	_ = g.AddEdge(KnowledgeExtractor, MilvusIndexer)
+	_ = g.AddEdge(KnowledgeExtractor, Neo4jIndexer)
 	_ = g.AddEdge(MilvusIndexer, compose.END)
 	_ = g.AddEdge(Neo4jIndexer, compose.END)
 
@@ -186,6 +189,10 @@ func newAutoSpliter(ctx context.Context) (tfr document.Transformer, err error) {
 	}, nil
 }
 
+func newKnowledgeExtractor(ctx context.Context, docs []*schema.Document, opts ...any) (output []*schema.Document, err error) {
+
+}
+
 func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	embeddingConfig := config.AppConfig.Indexer.Embedding
 	// Create an embedding model
@@ -211,6 +218,7 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 
 func newGraphIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	extractorConfig := config.AppConfig.Indexer.Extractor
+	embeddingConfig := config.AppConfig.Indexer.Embedding
 
 	// Create an extractor model
 	extractorModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
@@ -222,12 +230,23 @@ func newGraphIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 		return nil, errors.WithStack(err)
 	}
 
+	// Create an embedding model
+	embeddingModel, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		BaseURL: embeddingConfig.BaseURL,
+		APIKey:  embeddingConfig.APIKey,
+		Model:   embeddingConfig.Model,
+	})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
 	// Create a Neo4j indexer
 	graphIndexer, err := neo4jIndexer.NewIndexer(ctx, &neo4jIndexer.IndexerConfig{
-		Driver:          neo4jClient.Driver,
-		Database:        "neo4j",
-		EntityExtractor: extractorModel,
-		BatchSize:       50,
+		Driver:         neo4jClient.Driver,
+		Database:       "neo4j",
+		Extractor:      extractorModel,
+		EmbeddingModel: embeddingModel,
+		BatchSize:      50,
 	})
 	if err != nil {
 		return nil, errors.WithStack(err)
