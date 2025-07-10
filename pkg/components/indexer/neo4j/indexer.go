@@ -205,7 +205,7 @@ func (i *Indexer) storeBatch(ctx context.Context, storePairs StorePairs, opts *I
 			continue
 		}
 
-		id, err := i.store(ctx, session, &pair, opts.SimilarityThreshold)
+		id, err := i.store(ctx, session, &pair, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -218,7 +218,6 @@ func (i *Indexer) storeBatch(ctx context.Context, storePairs StorePairs, opts *I
 // store stores a single pair using the embedding-based similarity search logic
 func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, pair *StorePair, opts *ImplOptions) (string, error) {
 	threshold := opts.SimilarityThreshold
-	// if opts
 
 	embeddingModel := i.config.EmbeddingModel
 	sourceEmbedding, err := embeddingModel.EmbedStrings(ctx, []string{pair.From.Name})
@@ -242,12 +241,6 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 		return "", fmt.Errorf("failed to search destination node: %w", err)
 	}
 
-	// Prepare agent_id clause for node creation
-	agentIDClause := ""
-	if agentID != "" {
-		agentIDClause = ", agent_id: $agent_id"
-	}
-
 	var cypher string
 	var params map[string]interface{}
 	relationshipType := pair.Relation.Type
@@ -258,25 +251,24 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 		cypher = fmt.Sprintf(`
 			MATCH (source:Entity)
 			WHERE id(source) = $source_id
-			MERGE (destination:%s:Entity {name: $destination_name, user_id: $user_id%s})
+			MERGE (destination:%s:Entity {name: $destination_name})
 			ON CREATE SET
 				destination.created = timestamp(),
 				destination.embedding = $destination_embedding,
 				destination:Entity
 			MERGE (source)-[r:%s]->(destination)
 			ON CREATE SET 
-				r.created = timestamp()
+				r.created = timestamp(),
+			    r.hit = 1
+            ON MATCH SET
+                r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, pair.To.Type, agentIDClause, relationshipType)
+		`, pair.To.Type, relationshipType)
 
 		params = map[string]interface{}{
 			"source_id":             sourceNodeResult.ID,
 			"destination_name":      pair.To.Name,
 			"destination_embedding": destEmbedding[0],
-			"user_id":               userID,
-		}
-		if agentID != "" {
-			params["agent_id"] = agentID
 		}
 
 	} else if destNodeResult != nil && sourceNodeResult == nil {
@@ -284,25 +276,24 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 		cypher = fmt.Sprintf(`
 			MATCH (destination:Entity)
 			WHERE id(destination) = $destination_id
-			MERGE (source:%s:Entity {name: $source_name, user_id: $user_id%s})
+			MERGE (source:%s:Entity {name: $source_name})
 			ON CREATE SET
 				source.created = timestamp(),
 				source.embedding = $source_embedding,
 				source:Entity
 			MERGE (source)-[r:%s]->(destination)
 			ON CREATE SET 
-				r.created = timestamp()
+				r.created = timestamp(),
+			    r.hit = 1
+            ON MATCH SET
+                r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, pair.From.Type, agentIDClause, relationshipType)
+		`, pair.From.Type, relationshipType)
 
 		params = map[string]interface{}{
 			"destination_id":   destNodeResult.ID,
 			"source_name":      pair.From.Name,
 			"source_embedding": sourceEmbedding[0],
-			"user_id":          userID,
-		}
-		if agentID != "" {
-			params["agent_id"] = agentID
 		}
 
 	} else if sourceNodeResult != nil && destNodeResult != nil {
@@ -315,42 +306,41 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 			MERGE (source)-[r:%s]->(destination)
 			ON CREATE SET 
 				r.created_at = timestamp(),
-				r.updated_at = timestamp()
+				r.updated_at = timestamp(),
+				r.hit = 1
+            ON MATCH SET
+                r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
 		`, relationshipType)
 
 		params = map[string]interface{}{
 			"source_id":      sourceNodeResult.ID,
 			"destination_id": destNodeResult.ID,
-			"user_id":        userID,
-		}
-		if agentID != "" {
-			params["agent_id"] = agentID
 		}
 
 	} else {
 		// Both nodes don't exist
 		cypher = fmt.Sprintf(`
-			MERGE (n:%s:Entity {name: $source_name, user_id: $user_id%s})
+			MERGE (n:%s:Entity {name: $source_name})
 			ON CREATE SET n.created = timestamp(), n.embedding = $source_embedding, n:Entity
 			ON MATCH SET n.embedding = $source_embedding
-			MERGE (m:%s:Entity {name: $dest_name, user_id: $user_id%s})
+			MERGE (m:%s:Entity {name: $dest_name})
 			ON CREATE SET m.created = timestamp(), m.embedding = $dest_embedding, m:Entity
 			ON MATCH SET m.embedding = $dest_embedding
 			MERGE (n)-[rel:%s]->(m)
-			ON CREATE SET rel.created = timestamp()
+			ON CREATE SET 
+				rel.created = timestamp(),
+				rel.hit = 1
+            ON MATCH SET
+                rel.hit = coalesce(rel.hit, 0) + 1
 			RETURN n.name AS source, type(rel) AS relationship, m.name AS target
-		`, pair.From.Type, agentIDClause, pair.To.Type, agentIDClause, relationshipType)
+		`, pair.From.Type, pair.To.Type, relationshipType)
 
 		params = map[string]interface{}{
 			"source_name":      pair.From.Name,
 			"dest_name":        pair.To.Name,
 			"source_embedding": sourceEmbedding[0],
 			"dest_embedding":   destEmbedding[0],
-			"user_id":          userID,
-		}
-		if agentID != "" {
-			params["agent_id"] = agentID
 		}
 	}
 
@@ -444,7 +434,6 @@ func (i *Indexer) searchSimilarNode(ctx context.Context, session neo4j.SessionWi
 }
 
 // getDefaultDocumentConverter returns the default document converter
-// TODO: 默认添加一个来源于哪个文档id或摘要的关系.
 func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, docs []*schema.Document) (StorePairs, error) {
 	return func(ctx context.Context, docs []*schema.Document) (StorePairs, error) {
 		results := make(StorePairs, 0)
@@ -464,24 +453,17 @@ func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, 
 
 // extractEntitiesAndRelations extracts entities and relations from a document using LLM
 func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (StorePairs, error) {
-	if doc.MetaData["is_preference"] != nil { // is user preference doc.
-		if isPreference := doc.MetaData["is_preference"].(bool); isPreference {
-			header := ctxwarp.GetHeaderContext(ctx)
-			if header == nil || header.User == "" {
-				return StorePairs{}, nil
-			}
-		}
-	}
 	// Use the prompt from models to extract entities and relations
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
+		"user_key":       ctxwarp.GetHeaderContext(ctx).UserKey,
 	})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
 	toolInfo, err := utils.GoStruct2ToolInfo[StorePairs](
-		"store_entity_and_relation",
+		toolNameStoreEntityAndRelation,
 		"保存提取的实体和关系, Store entities and relations based on the provided text.",
 	)
 	if err != nil {
@@ -496,14 +478,19 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 
 	pairs := make(StorePairs, 0)
 	for _, toolCall := range output.ToolCalls {
-		if toolCall.Function.Name != "store_entity_and_relation" {
+		if toolCall.Function.Name != toolInfo.Name {
 			continue
 		}
 
 		if err := sonic.Unmarshal([]byte(toolCall.Function.Arguments), pairs); err != nil {
 			return nil, errors.WithStack(err)
 		}
-		pairs = append(pairs, pairs...)
+		for _, pair := range pairs {
+			if pair.From.Name == "" || pair.To.Name == "" || pair.Relation.Type == "" {
+				continue
+			}
+			pairs = append(pairs, pair)
+		}
 	}
 
 	return pairs, nil
@@ -563,9 +550,6 @@ func (i *IndexerConfig) check() error {
 	}
 	if i.BatchSize <= 0 {
 		i.BatchSize = 100
-	}
-	if i.SimilarityThreshold <= 0 {
-		i.SimilarityThreshold = 0.9
 	}
 	if i.DocumentConverter == nil {
 		i.DocumentConverter = i.getDefaultDocumentConverter()

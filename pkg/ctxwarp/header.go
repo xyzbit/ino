@@ -7,9 +7,9 @@ import (
 type headerContextKey struct{}
 
 type HeaderContext struct {
-	RequestID    string `json:"request_id,omitempty"`
-	CollectionID string `json:"collection_id,omitempty"`
-	User         string `json:"user,omitempty"`
+	RequestID     string `json:"request_id,omitempty"`
+	CollectionKey string `json:"collection_key,omitempty"`
+	UserKey       string `json:"user_key,omitempty"`
 }
 
 func SetHeaderContext(ctx context.Context, header *HeaderContext) context.Context {

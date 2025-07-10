@@ -1,5 +1,9 @@
 package indexer
 
+const (
+	toolNameStoreEntityAndRelation = "store_entity_and_relation"
+)
+
 type StorePairs []StorePair
 
 type StorePair struct {

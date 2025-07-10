@@ -6,14 +6,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
+	"github.com/xyzbit/ino/internal/domain/services"
 )
 
 type OpenAPI struct {
+	indexer *services.Indexer
 }
 
 func NewOpenAPI() *OpenAPI {
-
-	return &OpenAPI{}
+	indexer, err := services.NewIndexer()
+	if err != nil {
+		panic(err)
+	}
+	return &OpenAPI{
+		indexer: indexer,
+	}
 }
 
 // CollectKnowledge 收集知识.
@@ -28,6 +35,12 @@ func (o *OpenAPI) CollectKnowledge(c *gin.Context) {
 	}
 	if err = validateCollectKnowledgeRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = o.indexer.Exec(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

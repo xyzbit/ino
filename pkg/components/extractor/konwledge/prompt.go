@@ -20,22 +20,22 @@ var PromptKnowledgeExtractor = prompt.FromMessages(schema.FString,
 以下是一些示例：
 
 输入：你好！
-输出：{"facts": [], "preferences": []}
+输出：{{"facts": [], "preferences": []}}
 
 输入：天空是蓝色的。
-输出：{"facts": ["天空是蓝色的"], "preferences": []}
+输出：{{"facts": ["天空是蓝色的"], "preferences": []}}
 
 输入：我觉得早上喝咖啡比喝茶好。
-输出：{"facts": [], "preferences": ["我在早上觉得喝咖啡比喝茶好"]}
+输出：{{"facts": [], "preferences": ["我在早上觉得喝咖啡比喝茶好"]}}
 
 输入：我叫莉萨，和朋友外出吃饭时喜欢吃辣的食物。
-输出：{"facts": ["名字是莉萨"], "preferences": ["我和朋友外出吃饭时喜欢吃辣的食物"]}
+输出：{{"facts": ["名字是莉萨"], "preferences": ["我和朋友外出吃饭时喜欢吃辣的食物"]}}
 
 输入：昨天, 汤姆上午9点有一节课。他觉得这堂课太长了。
-输出：{"facts": ["汤姆昨天上午9点有一节课"], "preferences": ["汤姆在上课时觉得这堂课太长了"]}
+输出：{{"facts": ["汤姆昨天上午9点有一节课"], "preferences": ["汤姆在上课时觉得这堂课太长了"]}}
 
 输入：猫有四条腿。我喜欢狗胜过猫。
-输出：{"facts": ["猫有四条腿"], "preferences": ["我喜欢狗胜过猫"]}
+输出：{{"facts": ["猫有四条腿"], "preferences": ["我喜欢狗胜过猫"]}}
 
 请按照上述示例, 以JSON格式返回提取出的事实和偏好。
 

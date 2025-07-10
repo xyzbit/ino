@@ -130,7 +130,7 @@ services:
     image: neo4j:5.15
     container_name: ino-neo4j
     environment:
-      - NEO4J_AUTH=neo4j/neo4jpassword
+      # - NEO4J_AUTH=neo4j/neo4jpassword
       - NEO4J_dbms_memory_heap_initial__size=512M
       - NEO4J_dbms_memory_heap_max__size=2G
       - NEO4J_dbms_memory_pagecache_size=1G

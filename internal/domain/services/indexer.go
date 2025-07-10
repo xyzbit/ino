@@ -15,6 +15,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
@@ -23,6 +24,30 @@ import (
 	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
 	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
 	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
+)
+
+const (
+	typ                           = "Milvus"
+	defaultCollection             = "eino_collection"
+	defaultDescription            = "the collection for eino"
+	defaultCollectionID           = "id"
+	defaultCollectionIDDesc       = "the unique id of the document"
+	defaultCollectionVector       = "vector"
+	defaultCollectionVectorDesc   = "the vector of the document"
+	defaultCollectionContent      = "content"
+	defaultCollectionContentDesc  = "the content of the document"
+	defaultCollectionMetadata     = "metadata"
+	defaultCollectionMetadataDesc = "the metadata of the document"
+
+	defaultDim = 16384
+)
+
+const (
+	nodeRequestToDocs      = "requestToDocs"
+	nodeAutoSpliter        = "autoSpliter"
+	nodeMilvusIndexer      = "milvusIndexer"
+	nodeNeo4jIndexer       = "neo4jIndexer"
+	nodeKnowledgeExtractor = "knowledgeExtractor"
 )
 
 // Indexer 索引器
@@ -77,29 +102,23 @@ func (i *Indexer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) 
 }
 
 func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, []string], err error) {
-	const (
-		RequestToDocs      = "RequestToDocs"
-		AutoSpliter        = "AutoSpliter"
-		MilvusIndexer      = "MilvusIndexer"
-		Neo4jIndexer       = "Neo4jIndexer"
-		KnowledgeExtractor = "KnowledgeExtractor"
-	)
+
 	g := compose.NewGraph[*types.CollectKnowledgeRequest, []string]()
 
 	// add node
-	_ = g.AddLambdaNode(RequestToDocs, compose.InvokableLambdaWithOption(requestToDocs))
-	_ = g.AddDocumentTransformerNode(AutoSpliter, i.autoSpliter)
-	_ = g.AddIndexerNode(MilvusIndexer, i.vectorIndexer)
-	_ = g.AddIndexerNode(Neo4jIndexer, i.graphIndexer)
-	_ = g.AddLambdaNode(KnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
+	_ = g.AddLambdaNode(nodeRequestToDocs, compose.InvokableLambdaWithOption(requestToDocs))
+	_ = g.AddDocumentTransformerNode(nodeAutoSpliter, i.autoSpliter)
+	_ = g.AddIndexerNode(nodeMilvusIndexer, i.vectorIndexer)
+	_ = g.AddIndexerNode(nodeNeo4jIndexer, i.graphIndexer)
+	_ = g.AddLambdaNode(nodeKnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
 	// add edge
-	_ = g.AddEdge(compose.START, RequestToDocs)
-	_ = g.AddEdge(RequestToDocs, AutoSpliter)
-	_ = g.AddEdge(AutoSpliter, KnowledgeExtractor)
-	_ = g.AddEdge(KnowledgeExtractor, MilvusIndexer)
-	_ = g.AddEdge(KnowledgeExtractor, Neo4jIndexer)
-	_ = g.AddEdge(MilvusIndexer, compose.END)
-	_ = g.AddEdge(Neo4jIndexer, compose.END)
+	_ = g.AddEdge(compose.START, nodeRequestToDocs)
+	_ = g.AddEdge(nodeRequestToDocs, nodeAutoSpliter)
+	_ = g.AddEdge(nodeAutoSpliter, nodeKnowledgeExtractor)
+	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
+	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
+	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
+	// _ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
 	if err != nil {
@@ -215,6 +234,31 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
 		Client:    milvusClient.Client,
 		Embedding: emb,
+		Fields: []*entity.Field{
+			entity.NewField().
+				WithName(defaultCollectionID).
+				WithDescription(defaultCollectionIDDesc).
+				WithIsPrimaryKey(true).
+				WithDataType(entity.FieldTypeVarChar).
+				WithMaxLength(255),
+			entity.NewField().
+				WithName(defaultCollectionVector).
+				WithDescription(defaultCollectionVectorDesc).
+				WithIsPrimaryKey(false).
+				WithDataType(entity.FieldTypeBinaryVector).
+				WithDim(defaultDim),
+			entity.NewField().
+				WithName(defaultCollectionContent).
+				WithDescription(defaultCollectionContentDesc).
+				WithIsPrimaryKey(false).
+				WithDataType(entity.FieldTypeVarChar).
+				WithMaxLength(2048),
+			entity.NewField().
+				WithName(defaultCollectionMetadata).
+				WithDescription(defaultCollectionMetadataDesc).
+				WithIsPrimaryKey(false).
+				WithDataType(entity.FieldTypeJSON),
+		},
 	})
 	if err != nil {
 		return nil, err
