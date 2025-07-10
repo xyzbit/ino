@@ -18,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/xyzbit/ino/pkg/components/extractor/konwledge"
 	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
@@ -65,24 +64,6 @@ func NewIndexer() (*Indexer, error) {
 }
 
 func (i *Indexer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) error {
-	var eg errgroup.Group
-
-	gctx := context.WithoutCancel(ctx)
-	eg.Go(func() error {
-		return i.addtoVectorStore(gctx, req)
-	})
-	eg.Go(func() error {
-		return i.addtoGraphStore(gctx, req)
-	})
-
-	return eg.Wait()
-}
-
-func (i *Indexer) addtoVectorStore(ctx context.Context, req *types.CollectKnowledgeRequest) error {
-	return nil
-}
-
-func (i *Indexer) addtoGraphStore(ctx context.Context, req *types.CollectKnowledgeRequest) error {
 	runner, err := i.buildKnowledgeIndexing(ctx)
 	if err != nil {
 		return err
@@ -92,7 +73,6 @@ func (i *Indexer) addtoGraphStore(ctx context.Context, req *types.CollectKnowled
 		return err
 	}
 	fmt.Println(ids)
-
 	return nil
 }
 

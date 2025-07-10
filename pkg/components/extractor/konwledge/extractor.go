@@ -11,7 +11,6 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/xyzbit/ino/pkg/constants"
 )
 
 const (
@@ -82,24 +81,16 @@ func (k *Extractor) Extract(ctx context.Context, docs []*schema.Document, opts .
 		if err := json.Unmarshal([]byte(output.Content), &result); err != nil {
 			return nil, err
 		}
+		result.Source = doc.Content
 
-		for _, fact := range result.Facts {
-			results = append(results, &schema.Document{
-				Content: fact,
-				MetaData: map[string]any{
-					constants.CategoryKey: constants.CategoryValueFact,
-				},
-			})
+		jsonResult, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
 		}
 
-		for _, preference := range result.Preferences {
-			results = append(results, &schema.Document{
-				Content: preference,
-				MetaData: map[string]any{
-					constants.CategoryKey: constants.CategoryValuePreference,
-				},
-			})
-		}
+		results = append(results, &schema.Document{
+			Content: string(jsonResult),
+		})
 
 		allIDs = append(allIDs, doc.ID)
 	}
