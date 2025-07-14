@@ -10,6 +10,9 @@ import (
 
 // RegisterRoutes 注册所有路由
 func RegisterRoutes(r *gin.Engine, openAPI *openapi.OpenAPI, version string) {
+	// 添加全局日志中间件
+	r.Use(middlewareCheckError)
+
 	// 健康检查接口
 	r.GET("/health", healthCheck(version))
 

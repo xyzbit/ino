@@ -2,13 +2,16 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/components/document/loader/file"
 	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown"
 	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/milvus"
+	"github.com/cloudwego/eino-ext/components/indexer/redis"
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/indexer"
@@ -24,6 +27,7 @@ import (
 	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
 	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
 	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
+	redisClient "github.com/xyzbit/ino/pkg/infra/redis"
 )
 
 const (
@@ -39,13 +43,14 @@ const (
 	defaultCollectionMetadata     = "metadata"
 	defaultCollectionMetadataDesc = "the metadata of the document"
 
-	defaultDim = 16384
+	defaultDim = 2560
 )
 
 const (
 	nodeRequestToDocs      = "requestToDocs"
 	nodeAutoSpliter        = "autoSpliter"
 	nodeMilvusIndexer      = "milvusIndexer"
+	nodeRedisIndexer       = "redisIndexer"
 	nodeNeo4jIndexer       = "neo4jIndexer"
 	nodeKnowledgeExtractor = "knowledgeExtractor"
 )
@@ -53,6 +58,7 @@ const (
 // Indexer 索引器
 type Indexer struct {
 	vectorIndexer indexer.Indexer
+	redisIndexer  indexer.Indexer
 	graphIndexer  indexer.Indexer
 	autoSpliter   document.Transformer
 	extractor     compose.Invoke[[]*schema.Document, []*schema.Document, any]
@@ -61,6 +67,11 @@ type Indexer struct {
 // NewIndexer 创建索引器实例
 func NewIndexer() (*Indexer, error) {
 	vectorIndexer, err := newVectorIndexer(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	redisIndexer, err := newRedisIndexer(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +93,7 @@ func NewIndexer() (*Indexer, error) {
 
 	return &Indexer{
 		vectorIndexer: vectorIndexer,
+		redisIndexer:  redisIndexer,
 		graphIndexer:  graphIndexer,
 		autoSpliter:   autoSpliter,
 		extractor:     extractor,
@@ -110,14 +122,17 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddDocumentTransformerNode(nodeAutoSpliter, i.autoSpliter)
 	_ = g.AddIndexerNode(nodeMilvusIndexer, i.vectorIndexer)
 	_ = g.AddIndexerNode(nodeNeo4jIndexer, i.graphIndexer)
+	_ = g.AddIndexerNode(nodeRedisIndexer, i.redisIndexer)
 	_ = g.AddLambdaNode(nodeKnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
 	// add edge
 	_ = g.AddEdge(compose.START, nodeRequestToDocs)
 	_ = g.AddEdge(nodeRequestToDocs, nodeAutoSpliter)
 	_ = g.AddEdge(nodeAutoSpliter, nodeKnowledgeExtractor)
-	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
+	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
+	_ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
 	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
-	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
+	// _ = g.AddEdge(nodeMilvusIndexer, compose.END)
+	_ = g.AddEdge(nodeRedisIndexer, compose.END)
 	// _ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
@@ -218,6 +233,49 @@ func newKnowledgeExtractor(ctx context.Context) (compose.Invoke[[]*schema.Docume
 	return extractor.Extract, nil
 }
 
+func newRedisIndexer(ctx context.Context) (idr indexer.Indexer, err error) {
+	indexerConfig := &redis.IndexerConfig{
+		Client:    redisClient.Redis,
+		KeyPrefix: "ino_collection",
+		BatchSize: 1,
+		DocumentToHashes: func(ctx context.Context, doc *schema.Document) (*redis.Hashes, error) {
+			if doc.ID == "" {
+				doc.ID = uuid.New().String()
+			}
+			key := doc.ID
+
+			metadataBytes, err := json.Marshal(doc.MetaData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+			}
+
+			return &redis.Hashes{
+				Key: key,
+				Field2Value: map[string]redis.FieldValue{
+					redisClient.ContentField:  {Value: doc.Content, EmbedKey: redisClient.VectorField},
+					redisClient.MetadataField: {Value: metadataBytes},
+				},
+			}, nil
+		},
+	}
+
+	embeddingConfig := config.AppConfig.Indexer.Embedding
+	embeddingIns11, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		BaseURL: embeddingConfig.BaseURL,
+		APIKey:  embeddingConfig.APIKey,
+		Model:   embeddingConfig.Model,
+	})
+	if err != nil {
+		return nil, err
+	}
+	indexerConfig.Embedding = embeddingIns11
+	idr, err = redis.NewIndexer(ctx, indexerConfig)
+	if err != nil {
+		return nil, err
+	}
+	return idr, nil
+}
+
 func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	embeddingConfig := config.AppConfig.Indexer.Embedding
 	// Create an embedding model
@@ -232,8 +290,9 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 
 	// Create an indexer
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
-		Client:    milvusClient.Client,
-		Embedding: emb,
+		Client:     milvusClient.Client,
+		Embedding:  emb,
+		Collection: "ino_collection",
 		Fields: []*entity.Field{
 			entity.NewField().
 				WithName(defaultCollectionID).
@@ -245,19 +304,47 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 				WithName(defaultCollectionVector).
 				WithDescription(defaultCollectionVectorDesc).
 				WithIsPrimaryKey(false).
-				WithDataType(entity.FieldTypeBinaryVector).
+				WithDataType(entity.FieldTypeFloatVector).
 				WithDim(defaultDim),
 			entity.NewField().
 				WithName(defaultCollectionContent).
 				WithDescription(defaultCollectionContentDesc).
 				WithIsPrimaryKey(false).
 				WithDataType(entity.FieldTypeVarChar).
-				WithMaxLength(2048),
+				WithMaxLength(4096),
 			entity.NewField().
 				WithName(defaultCollectionMetadata).
 				WithDescription(defaultCollectionMetadataDesc).
 				WithIsPrimaryKey(false).
 				WithDataType(entity.FieldTypeJSON),
+		},
+		// 自定义 DocumentConverter 用于 FloatVector 类型
+		DocumentConverter: func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
+			rows := make([]interface{}, 0, len(docs))
+
+			for idx, doc := range docs {
+				// 序列化 metadata
+				metadataBytes, err := sonic.Marshal(doc.MetaData)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+				}
+
+				// 转换向量为 float32
+				vector32 := make([]float32, len(vectors[idx]))
+				for i, v := range vectors[idx] {
+					vector32[i] = float32(v)
+				}
+
+				// 创建行数据
+				row := map[string]interface{}{
+					defaultCollectionID:       doc.ID,
+					defaultCollectionContent:  doc.Content,
+					defaultCollectionVector:   vector32,
+					defaultCollectionMetadata: metadataBytes,
+				}
+				rows = append(rows, row)
+			}
+			return rows, nil
 		},
 	})
 	if err != nil {

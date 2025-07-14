@@ -34,6 +34,8 @@ func Init() {
 	} else {
 		log.Printf("Connected to Redis successfully")
 	}
+
+	InitRedisIndex(context.Background(), Redis, 4096)
 }
 
 // Close 关闭数据库连接
