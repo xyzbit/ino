@@ -33,6 +33,15 @@ indexer:
     base_url: "https://ark.cn-beijing.volces.com/api/v3"
     api_key: "b6582d68-9832-410b-ac22-acf3b60f50f2"
     model: "ep-20250707170043-q9254"
+  # embedding:
+  #   base_url: "https://api.siliconflow.cn/v1/embeddings"
+  #   api_key: "sk-voxftsvsnuopuqmerrudlhliotgqosanjiimipdeninzagrq"
+  #   model: "BAAI/bge-m3"
+  # extractor:
+  #   base_url: "https://api.siliconflow.cn/v1/chat/completions"
+  #   api_key: "sk-voxftsvsnuopuqmerrudlhliotgqosanjiimipdeninzagrq"
+  #   model: "Qwen/Qwen3-8B" # THUDM/GLM-4-9B-0414
+  
 
 # 日志配置
 logging:

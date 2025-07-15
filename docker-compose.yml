@@ -127,7 +127,7 @@ services:
 
   # Neo4j 图数据库
   neo4j:
-    image: neo4j:5.15
+    image: neo4j:5.23
     container_name: ino-neo4j
     environment:
       # - NEO4J_AUTH=neo4j/neo4jpassword

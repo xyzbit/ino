@@ -43,7 +43,7 @@ const (
 	defaultCollectionMetadata     = "metadata"
 	defaultCollectionMetadataDesc = "the metadata of the document"
 
-	defaultDim = 2560
+	defaultDim = 2560 // 注意要和向量模型维度一致
 )
 
 const (
@@ -128,12 +128,12 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddEdge(compose.START, nodeRequestToDocs)
 	_ = g.AddEdge(nodeRequestToDocs, nodeAutoSpliter)
 	_ = g.AddEdge(nodeAutoSpliter, nodeKnowledgeExtractor)
-	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
-	_ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
-	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
-	// _ = g.AddEdge(nodeMilvusIndexer, compose.END)
-	_ = g.AddEdge(nodeRedisIndexer, compose.END)
-	// _ = g.AddEdge(nodeNeo4jIndexer, compose.END)
+	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
+	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
+	_ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
+	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
+	// _ = g.AddEdge(nodeRedisIndexer, compose.END)
+	_ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
 	if err != nil {
@@ -292,7 +292,7 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
 		Client:     milvusClient.Client,
 		Embedding:  emb,
-		Collection: "ino_collection",
+		Collection: "ino_collection_2560",
 		Fields: []*entity.Field{
 			entity.NewField().
 				WithName(defaultCollectionID).
@@ -380,10 +380,10 @@ func newGraphIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	// Create a Neo4j indexer
 	graphIndexer, err := neo4jIndexer.NewIndexer(ctx, &neo4jIndexer.IndexerConfig{
 		Driver:         neo4jClient.Driver,
-		Database:       "neo4j",
 		Extractor:      extractorModel,
 		EmbeddingModel: embeddingModel,
 		BatchSize:      50,
+		Dimension:      defaultDim,
 	})
 	if err != nil {
 		return nil, errors.WithStack(err)

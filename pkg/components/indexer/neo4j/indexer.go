@@ -19,6 +19,7 @@ package indexer
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -29,7 +30,6 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/pkg/ctxwarp"
@@ -44,6 +44,7 @@ type IndexerConfig struct {
 
 	// Database is the database name in Neo4j
 	// Optional, default is "neo4j"
+	// Note: Community Edition does not support creating multiple databases.
 	Database string
 
 	// Extractor is the model used to extract entities and relations from documents
@@ -53,6 +54,10 @@ type IndexerConfig struct {
 	// EmbeddingModel is the model used to generate embeddings for entities
 	// Required
 	EmbeddingModel embedding.Embedder
+
+	// Dimension is the dimension of the embedding
+	// Optional, default is 2048
+	Dimension int
 
 	// DocumentConverter is the model used to convert documents to entities and relations
 	// Required
@@ -69,6 +74,8 @@ type IndexerConfig struct {
 	// BatchSize is the number of documents to process in one batch
 	// Optional, default is 100
 	BatchSize int
+
+	respSchema string // 响应格式
 }
 
 type Indexer struct {
@@ -84,9 +91,6 @@ type ImplOptions struct {
 
 	// RelationTypes specifies the relation types to extract
 	RelationTypes []string
-
-	// MinConfidence specifies the minimum confidence score for entities/relations
-	MinConfidence float64
 
 	// SimilarityThreshold specifies the threshold for determining similar nodes, default is 0.9
 	SimilarityThreshold float64
@@ -104,10 +108,33 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 		return nil, fmt.Errorf("[NewIndexer] Neo4j connection failed: %w", err)
 	}
 
+	// Create database if not exists
+	if err := conf.ensureDatabaseExists(ctx); err != nil {
+		return nil, fmt.Errorf("[NewIndexer] failed to ensure database exists: %w", err)
+	}
+
 	// Create indexes for better performance
-	if err := conf.createIndexes(ctx); err != nil {
+	if err := conf.createIndexes(ctx, conf.Dimension); err != nil {
 		return nil, fmt.Errorf("[NewIndexer] failed to create indexes: %w", err)
 	}
+
+	toolInfo, err := utils.GoStruct2ToolInfo[ExtractEntityAndRelation](
+		toolNameStoreEntityAndRelation,
+		"保存提取的实体和关系, Store entities and relations based on the provided text.",
+	)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	// 部分模型不支持工具调用或工具调用能力差，使用更通用的模式.
+	respSchema, err := toolInfo.ToOpenAPIV3()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	respSchemaBytes, err := respSchema.MarshalJSON()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	conf.respSchema = string(respSchemaBytes)
 
 	return &Indexer{
 		config: *conf,
@@ -195,11 +222,6 @@ func (i *Indexer) storeBatch(ctx context.Context, storePairs StorePairs, opts *I
 	var ids []string
 
 	for _, pair := range storePairs {
-		// Apply confidence filter
-		if opts.MinConfidence > 0 && pair.Confidence < opts.MinConfidence {
-			continue
-		}
-
 		// Apply entity type filter
 		if len(opts.EntityTypes) > 0 && (!contains(opts.EntityTypes, pair.From.Type) || !contains(opts.EntityTypes, pair.To.Type)) {
 			continue
@@ -344,6 +366,9 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 		}
 	}
 
+	log.Println("cypher", cypher)
+	log.Println("params", params)
+
 	// Execute the cypher query
 	result, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		result, err := tx.Run(ctx, cypher, params)
@@ -379,18 +404,17 @@ func (i *Indexer) searchSimilarNode(ctx context.Context, session neo4j.SessionWi
 	// Build cypher query to search for similar nodes
 	cypher := `
 		MATCH (n:Entity)
-		WHERE n.type = $entity_type AND exists(n.embedding)
-		WITH n, gds.similarity.cosine(n.embedding, $embedding) AS similarity
-		WHERE similarity >= $threshold
-		RETURN id(n) as id, n.name as name, n.type as type, similarity
-		ORDER BY similarity DESC
+		WHERE n.type = $entity_type AND n.embedding IS NOT NULL
+		CALL db.index.vector.queryNodes('entity_embedding_index', 5, $embedding)
+		YIELD node, score
+		RETURN id(node) as id, node.name as name, node.type as type, score
+		ORDER BY score DESC
 		LIMIT 1
 	`
 
 	params := map[string]interface{}{
 		"entity_type": entityType,
 		"embedding":   embeddingList,
-		"threshold":   threshold,
 	}
 
 	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
@@ -412,7 +436,7 @@ func (i *Indexer) searchSimilarNode(ctx context.Context, session neo4j.SessionWi
 			if nodeType, found := record.Get("type"); found {
 				searchResult.Type = nodeType.(string)
 			}
-			if score, found := record.Get("similarity"); found {
+			if score, found := record.Get("score"); found {
 				searchResult.Score = score.(float64)
 			}
 
@@ -430,7 +454,12 @@ func (i *Indexer) searchSimilarNode(ctx context.Context, session neo4j.SessionWi
 		return nil, nil
 	}
 
-	return result.(*SearchResult), nil
+	searchResult := result.(*SearchResult)
+	if searchResult.Score < threshold {
+		return nil, nil
+	}
+
+	return searchResult, nil
 }
 
 // getDefaultDocumentConverter returns the default document converter
@@ -457,47 +486,100 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
 		"user_key":       ctxwarp.GetHeaderContext(ctx).UserKey,
+		"resp_schema":    i.respSchema,
 	})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	for _, msg := range msgs {
+		log.Println("msg", msg.Content)
+	}
 
-	toolInfo, err := utils.GoStruct2ToolInfo[StorePairs](
-		toolNameStoreEntityAndRelation,
-		"保存提取的实体和关系, Store entities and relations based on the provided text.",
-	)
+	output, err := i.Extractor.Generate(ctx, msgs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	// utils.InferTool("add_user", "add user", AddUser)
-	output, err := i.Extractor.Generate(ctx, msgs, model.WithTools([]*schema.ToolInfo{toolInfo}))
-	if err != nil {
+	log.Println("output", output.Content)
+
+	extractEntityAndRelation := ExtractEntityAndRelation{}
+	if err := sonic.Unmarshal([]byte(output.Content), &extractEntityAndRelation); err != nil {
 		return nil, errors.WithStack(err)
 	}
 
 	pairs := make(StorePairs, 0)
-	for _, toolCall := range output.ToolCalls {
-		if toolCall.Function.Name != toolInfo.Name {
+	for _, relation := range extractEntityAndRelation.Relations {
+		fromEntity := Entity{}
+		toEntity := Entity{}
+		for _, entity := range extractEntityAndRelation.Entities {
+			if entity.Name == relation.FromEntityName {
+				fromEntity = entity
+			}
+			if entity.Name == relation.ToEntityName {
+				toEntity = entity
+			}
+		}
+		if fromEntity.Name == "" || toEntity.Name == "" {
 			continue
 		}
-
-		if err := sonic.Unmarshal([]byte(toolCall.Function.Arguments), pairs); err != nil {
-			return nil, errors.WithStack(err)
-		}
-		for _, pair := range pairs {
-			if pair.From.Name == "" || pair.To.Name == "" || pair.Relation.Type == "" {
-				continue
-			}
-			pairs = append(pairs, pair)
-		}
+		pairs = append(pairs, StorePair{
+			From:     fromEntity,
+			To:       toEntity,
+			Relation: relation,
+		})
 	}
 
 	return pairs, nil
 }
 
+// ensureDatabaseExists checks if the database exists and creates it if not
+func (i *IndexerConfig) ensureDatabaseExists(ctx context.Context) error {
+	// Connect to system database to manage other databases
+	// Use write mode since we might need to create database
+	systemSession := i.Driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer systemSession.Close(ctx)
+
+	// Check if database exists using efficient query
+	databaseExists, err := systemSession.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+		result, err := tx.Run(ctx, "SHOW DATABASES YIELD name WHERE name = $db_name", map[string]any{
+			"db_name": i.Database,
+		})
+		if err != nil {
+			return false, err
+		}
+
+		// If we get any result, the database exists
+		exists := result.Next(ctx)
+		if err := result.Err(); err != nil {
+			return false, err
+		}
+		return exists, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to check database existence: %w", err)
+	}
+
+	// Create database if it doesn't exist
+	if !databaseExists.(bool) {
+		_, err := systemSession.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
+			query := fmt.Sprintf("CREATE DATABASE `%s`", i.Database)
+			_, err := tx.Run(ctx, query, nil)
+			return nil, err
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create database: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // createIndexes creates necessary indexes for better performance
-func (i *IndexerConfig) createIndexes(ctx context.Context) error {
+func (i *IndexerConfig) createIndexes(ctx context.Context, dimension int) error {
 	session := i.Driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: i.Database,
@@ -508,6 +590,7 @@ func (i *IndexerConfig) createIndexes(ctx context.Context) error {
 		"CREATE INDEX entity_id_index IF NOT EXISTS FOR (e:Entity) ON (e.id)",
 		"CREATE INDEX entity_type_index IF NOT EXISTS FOR (e:Entity) ON (e.type)",
 		"CREATE INDEX entity_name_index IF NOT EXISTS FOR (e:Entity) ON (e.name)",
+		fmt.Sprintf("CREATE VECTOR INDEX entity_embedding_index IF NOT EXISTS FOR (e:Entity) ON (e.embedding) OPTIONS { indexConfig: { `vector.dimensions`: %d, `vector.similarity_function`: 'cosine' }}", dimension),
 		"CREATE INDEX relation_id_index IF NOT EXISTS FOR ()-[r:RELATION]-() ON (r.id)",
 		"CREATE INDEX relation_type_index IF NOT EXISTS FOR ()-[r:RELATION]-() ON (r.type)",
 	}
@@ -539,6 +622,9 @@ func (i *IndexerConfig) check() error {
 	if i.EmbeddingModel == nil {
 		return fmt.Errorf("[NewIndexer] embedding model not provided")
 	}
+	if i.Dimension <= 0 {
+		i.Dimension = 2048
+	}
 	if i.Database == "" {
 		i.Database = "neo4j"
 	}
@@ -555,37 +641,6 @@ func (i *IndexerConfig) check() error {
 		i.DocumentConverter = i.getDefaultDocumentConverter()
 	}
 	return nil
-}
-
-// Utility functions
-
-func generateEntityID(name, entityType string) string {
-	if name == "" {
-		return uuid.New().String()
-	}
-	return fmt.Sprintf("%s_%s_%s", entityType, name, uuid.New().String()[:8])
-}
-
-func generateRelationID(from, to, relationType string) string {
-	return fmt.Sprintf("%s_%s_%s_%s", from, relationType, to, uuid.New().String()[:8])
-}
-
-func getDocumentSource(doc *schema.Document) string {
-	if source, ok := doc.MetaData["source"]; ok {
-		if str, ok := source.(string); ok {
-			return str
-		}
-	}
-	return "unknown"
-}
-
-func getDocumentTitle(doc *schema.Document) string {
-	if title, ok := doc.MetaData["title"]; ok {
-		if str, ok := title.(string); ok {
-			return str
-		}
-	}
-	return fmt.Sprintf("Document_%s", doc.ID)
 }
 
 func contains(slice []string, item string) bool {
