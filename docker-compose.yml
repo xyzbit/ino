@@ -115,7 +115,7 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
     volumes:
-      - milvus_data:/var/lib/milvus
+      - ~/.ino/milvus_data:/var/lib/milvus
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -124,6 +124,14 @@ services:
       - "minio"
     networks:
       - ino-network
+    deploy:
+      resources:
+        reservations:
+          cpus: '0.5'  # 预留 0.5 个 CPU 核心
+          memory: '512M'  # 预留 512MB 内存
+        limits:
+          cpus: '2'    # 最大使用 2 个 CPU 核心
+          memory: '2G'  # 最大使用 2GB 内存
 
   # Neo4j 图数据库
   neo4j:
