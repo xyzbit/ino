@@ -91,10 +91,11 @@ docker-build: build-docker ## 构建Docker镜像
 
 # 启动所有服务（不包括API）
 .PHONY: services-up
-services-up: ## 启动基础设施服务（MySQL, Redis, Milvus, Neo4j）
+services-up: ## 启动基础设施服务（MySQL, Redis, Milvus, Neo4j, Attu）
 	@echo "🚀 启动基础设施服务..."
-	@docker-compose up -d mysql redis etcd minio milvus-standalone neo4j
+	@docker-compose up -d mysql redis etcd minio milvus-standalone neo4j attu
 	@echo "✅ 基础设施服务启动完成"
+	@echo "🌐 Attu 管理界面: http://localhost:3000"
 	@echo "等待服务初始化..."
 	@sleep 10
 	@docker-compose ps

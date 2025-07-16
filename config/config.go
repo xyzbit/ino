@@ -16,6 +16,8 @@ type Config struct {
 
 	Indexer   IndexerConfig   `mapstructure:"indexer"`
 	Retriever RetrieverConfig `mapstructure:"retriever"`
+
+	Langfuse LangfuseConfig `mapstructure:"langfuse"`
 }
 
 // ServerConfig 服务器配置
@@ -68,6 +70,13 @@ type LLMConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 	Model   string `mapstructure:"model"`
 	APIKey  string `mapstructure:"api_key"`
+}
+
+type LangfuseConfig struct {
+	Enabled   bool   `json:"enabled" mapstructure:"enabled"`
+	Host      string `json:"host" mapstructure:"host"`
+	PublicKey string `json:"public_key" mapstructure:"public_key"`
+	SecretKey string `json:"secret_key" mapstructure:"secret_key"`
 }
 
 var AppConfig Config

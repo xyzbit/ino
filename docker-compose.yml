@@ -109,7 +109,7 @@ services:
 
   milvus-standalone:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.3.4
+    image: milvusdb/milvus:v2.5.14
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -138,7 +138,7 @@ services:
     image: neo4j:5.23
     container_name: ino-neo4j
     environment:
-      # - NEO4J_AUTH=neo4j/neo4jpassword
+      - NEO4J_AUTH=neo4j/neo4jpassword
       - NEO4J_dbms_memory_heap_initial__size=512M
       - NEO4J_dbms_memory_heap_max__size=2G
       - NEO4J_dbms_memory_pagecache_size=1G
@@ -152,6 +152,18 @@ services:
       - neo4j_logs:/logs
       - neo4j_import:/import
       - neo4j_plugins:/plugins
+    networks:
+      - ino-network
+    restart: unless-stopped
+
+  # Attu - Milvus 管理界面
+  attu:
+    image: zilliz/attu:latest
+    container_name: ino-attu
+    ports:
+      - "3000:3000"
+    depends_on:
+      - milvus-standalone
     networks:
       - ino-network
     restart: unless-stopped

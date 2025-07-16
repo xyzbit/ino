@@ -6,7 +6,7 @@ database:
   host: "localhost"
   port: 3306
   user: "root"
-  password: "rootpassword"
+  password: "your_database_password"
   dbname: "ino"
 
 redis:
@@ -22,24 +22,24 @@ milvus:
 neo4j:
   uri: "bolt://localhost:7687"
   username: "neo4j"
-  password: "neo4jpassword"
+  password: "your_neo4j_password"
 
 indexer:
   embedding:
-    base_url: "https://ark.cn-beijing.volces.com/api/v3"
-    api_key: "b6582d68-9832-410b-ac22-acf3b60f50f2"
-    model: "ep-20250714161406-8t29t"
+    base_url: "https://your-embedding-service.com/api/v3"
+    api_key: "your_embedding_api_key"
+    model: "your_embedding_model"
   extractor:
-    base_url: "https://ark.cn-beijing.volces.com/api/v3"
-    api_key: "b6582d68-9832-410b-ac22-acf3b60f50f2"
-    model: "ep-20250707170043-q9254"
+    base_url: "https://your-extraction-service.com/api/v3"
+    api_key: "your_extraction_api_key"
+    model: "your_extraction_model"
   # embedding:
   #   base_url: "https://api.siliconflow.cn/v1/embeddings"
-  #   api_key: "sk-voxftsvsnuopuqmerrudlhliotgqosanjiimipdeninzagrq"
+  #   api_key: "your_siliconflow_api_key"
   #   model: "BAAI/bge-m3"
   # extractor:
   #   base_url: "https://api.siliconflow.cn/v1/chat/completions"
-  #   api_key: "sk-voxftsvsnuopuqmerrudlhliotgqosanjiimipdeninzagrq"
+  #   api_key: "your_siliconflow_api_key"
   #   model: "Qwen/Qwen3-8B" # THUDM/GLM-4-9B-0414
   
 
@@ -69,6 +69,6 @@ cache:
 # Langfuse 配置
 langfuse:
   enabled: true
-  host: http://112.126.85.102:3000
-  public_key: pk-lf-9a531255-2752-4b56-adef-cf82c27133b5
-  secret_key: sk-lf-9446d356-1802-46ce-8e73-023048c0502e
+  host: "http://your-langfuse-host:3000"
+  public_key: "your_langfuse_public_key"
+  secret_key: "your_langfuse_secret_key"

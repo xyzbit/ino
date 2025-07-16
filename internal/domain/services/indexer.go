@@ -129,11 +129,11 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddEdge(nodeRequestToDocs, nodeAutoSpliter)
 	_ = g.AddEdge(nodeAutoSpliter, nodeKnowledgeExtractor)
 	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
-	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
-	_ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
 	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
+	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
+	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
 	// _ = g.AddEdge(nodeRedisIndexer, compose.END)
-	_ = g.AddEdge(nodeNeo4jIndexer, compose.END)
+	// _ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
 	if err != nil {
@@ -293,6 +293,7 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 		Client:     milvusClient.Client,
 		Embedding:  emb,
 		Collection: "ino_collection_2560",
+		MetricType: milvus.CONSINE,
 		Fields: []*entity.Field{
 			entity.NewField().
 				WithName(defaultCollectionID).
