@@ -12,10 +12,3 @@ make services-up
 
 ### 运行 ino
 make dev
-
-## RoadMap
-
-[ ] 支持数据检索
-[ ] 支持请求过程监控
-[ ] 支持评估系统，提示词调优
-[ ] 支持更多工具提供（通过 mcp、cli 等 形式）

@@ -293,6 +293,7 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 		Client:     milvusClient.Client,
 		Embedding:  emb,
 		Collection: "ino_collection_2560",
+		MetricType: milvus.MetricType(milvus.L2),
 		Fields: []*entity.Field{
 			entity.NewField().
 				WithName(defaultCollectionID).
@@ -304,7 +305,7 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 				WithName(defaultCollectionVector).
 				WithDescription(defaultCollectionVectorDesc).
 				WithIsPrimaryKey(false).
-				WithDataType(entity.FieldTypeFloatVector).
+				WithDataType(entity.FieldTypeFloatVector). //FieldTypeBinaryVector
 				WithDim(defaultDim),
 			entity.NewField().
 				WithName(defaultCollectionContent).
