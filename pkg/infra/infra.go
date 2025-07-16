@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/xyzbit/ino/internal/domain/models"
+	"github.com/xyzbit/ino/pkg/infra/langfuse"
 	"github.com/xyzbit/ino/pkg/infra/milvus"
 	"github.com/xyzbit/ino/pkg/infra/mysql"
 	"github.com/xyzbit/ino/pkg/infra/neo4j"
@@ -17,6 +18,7 @@ func Init() {
 	redis.Init()
 	milvus.Init()
 	neo4j.Init()
+	langfuse.Init()
 
 	// 初始化种子数据
 	if err := models.SeedData(mysql.DB); err != nil {
@@ -30,5 +32,6 @@ func Close() error {
 	redis.Close()
 	milvus.Close()
 	neo4j.Close()
+	langfuse.Close()
 	return nil
 }
