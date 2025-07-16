@@ -54,6 +54,8 @@ github.com/cloudwego/eino-ext/components/indexer/redis v0.0.0-20250710065240-482
 github.com/cloudwego/eino-ext/components/indexer/redis v0.0.0-20250710065240-482d48888f25/go.mod h1:h5ltS4Jds7aYhQzNEgkdUg00EQS52C+TWmzNJFAkvt4=
 github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585 h1:AHTAShrgBQnaJzIgrRZ34/+yAzEWwGINGeq+5f4N+4Q=
 github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585/go.mod h1:2mFQQnlhJrNgbW6YX1MOUUfXkGSbTz9Ylx37fbR0xBo=
+github.com/cloudwego/eino-ext/components/retriever/milvus v0.0.0-20250716023014-abdf457084e7 h1:3gRGB+EzE+LRHC1/5MdBdVFS90UyvjvIxJ1TvldpcOk=
+github.com/cloudwego/eino-ext/components/retriever/milvus v0.0.0-20250716023014-abdf457084e7/go.mod h1:PYh8yoOcuFYVfSZZ4vglaeRgaXrMz5D4uKioDZxEDA0=
 github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20250409060521-ba8646352e4b h1:QGOp1e7tmQEUtznQ8fD8xUam2d/RECA8oJuPam2212s=
 github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20250409060521-ba8646352e4b/go.mod h1:3U4sve/4FGASns5zXHUfBX4ZTruQEhT1t9F1cNb5czM=
 github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250626133421-3c142631c961 h1:fGE3RFHaAsrLjA+2fkE0YMsPrkFI6pEKKZmbhD42L7E=

@@ -10,7 +10,8 @@ import (
 )
 
 type OpenAPI struct {
-	indexer *services.Indexer
+	indexer   *services.Indexer
+	retriever *services.Retriever
 }
 
 func NewOpenAPI() *OpenAPI {
@@ -18,8 +19,13 @@ func NewOpenAPI() *OpenAPI {
 	if err != nil {
 		panic(err)
 	}
+	retriever, err := services.NewRetriever()
+	if err != nil {
+		panic(err)
+	}
 	return &OpenAPI{
-		indexer: indexer,
+		indexer:   indexer,
+		retriever: retriever,
 	}
 }
 

@@ -124,14 +124,6 @@ services:
       - "minio"
     networks:
       - ino-network
-    deploy:
-      resources:
-        reservations:
-          cpus: '0.5'  # 预留 0.5 个 CPU 核心
-          memory: '512M'  # 预留 512MB 内存
-        limits:
-          cpus: '2'    # 最大使用 2 个 CPU 核心
-          memory: '2G'  # 最大使用 2GB 内存
 
   # Neo4j 图数据库
   neo4j:

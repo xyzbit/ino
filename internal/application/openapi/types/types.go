@@ -17,3 +17,10 @@ type CollectKnowledgeRequestHeader struct {
 type CollectKnowledgeResponse struct {
 	Message string `json:"message"`
 }
+
+type RetrieveRequest struct {
+	Query string `json:"query"`
+}
+
+type RetrieveResponse struct {
+}

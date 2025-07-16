@@ -13,6 +13,7 @@ require (
 	github.com/cloudwego/eino-ext/components/indexer/milvus v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/indexer/redis v0.0.0-20250710065240-482d48888f25
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585
+	github.com/cloudwego/eino-ext/components/retriever/milvus v0.0.0-20250716023014-abdf457084e7
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2

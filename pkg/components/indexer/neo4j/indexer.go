@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -265,7 +267,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 
 	var cypher string
 	var params map[string]interface{}
-	relationshipType := pair.Relation.Type
+	relationshipType := sanitizeRelationshipType(pair.Relation.Type)
 
 	// Build cypher query based on search results
 	if destNodeResult == nil && sourceNodeResult != nil {
@@ -658,4 +660,35 @@ type SearchResult struct {
 	Name  string  `json:"name"`
 	Type  string  `json:"type"`
 	Score float64 `json:"score"`
+}
+
+// sanitizeRelationshipType cleans relationship type names to make them valid for Neo4j
+func sanitizeRelationshipType(relType string) string {
+	// Replace Chinese parentheses with English ones
+	relType = strings.ReplaceAll(relType, "（", "(")
+	relType = strings.ReplaceAll(relType, "）", ")")
+
+	// Remove or replace invalid characters for Neo4j relationship types
+	// Neo4j allows alphanumeric characters, underscores, and some unicode characters
+	// but parentheses and some special characters need to be handled
+	relType = strings.ReplaceAll(relType, "(", "_")
+	relType = strings.ReplaceAll(relType, ")", "_")
+	relType = strings.ReplaceAll(relType, " ", "_")
+	relType = strings.ReplaceAll(relType, "-", "_")
+	relType = strings.ReplaceAll(relType, "，", "_")
+	relType = strings.ReplaceAll(relType, ",", "_")
+
+	// Remove multiple consecutive underscores
+	re := regexp.MustCompile(`_+`)
+	relType = re.ReplaceAllString(relType, "_")
+
+	// Remove leading and trailing underscores
+	relType = strings.Trim(relType, "_")
+
+	// Ensure it's not empty
+	if relType == "" {
+		relType = "RELATED_TO"
+	}
+
+	return relType
 }

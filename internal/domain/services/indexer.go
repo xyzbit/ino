@@ -25,6 +25,7 @@ import (
 
 	"github.com/xyzbit/ino/pkg/components/extractor/konwledge"
 	neo4jIndexer "github.com/xyzbit/ino/pkg/components/indexer/neo4j"
+	"github.com/xyzbit/ino/pkg/constants"
 	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
 	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
 	redisClient "github.com/xyzbit/ino/pkg/infra/redis"
@@ -131,9 +132,9 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
 	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
 	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
-	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
+	_ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
 	// _ = g.AddEdge(nodeRedisIndexer, compose.END)
-	// _ = g.AddEdge(nodeNeo4jIndexer, compose.END)
+	_ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
 	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
 	if err != nil {
@@ -292,8 +293,8 @@ func newVectorIndexer(ctx context.Context) (idx indexer.Indexer, err error) {
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
 		Client:     milvusClient.Client,
 		Embedding:  emb,
-		Collection: "ino_collection_2560",
-		MetricType: milvus.CONSINE,
+		Collection: constants.VectorCollectionName,
+		MetricType: milvus.MetricType(constants.VectorMetricType),
 		Fields: []*entity.Field{
 			entity.NewField().
 				WithName(defaultCollectionID).

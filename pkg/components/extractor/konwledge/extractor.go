@@ -89,6 +89,7 @@ func (k *Extractor) Extract(ctx context.Context, docs []*schema.Document, opts .
 		}
 
 		results = append(results, &schema.Document{
+			ID:      doc.ID,
 			Content: string(jsonResult),
 		})
 
