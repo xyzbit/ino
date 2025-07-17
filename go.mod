@@ -20,6 +20,7 @@ require (
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.11.0
+	github.com/samber/lo v1.51.0
 	github.com/spf13/viper v1.20.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0

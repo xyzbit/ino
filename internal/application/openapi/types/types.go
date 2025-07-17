@@ -23,4 +23,11 @@ type RetrieveRequest struct {
 }
 
 type RetrieveResponse struct {
+	RetrieveItems []RetrieveItem `json:"retrieve_items"`
+}
+
+type RetrieveItem struct {
+	ID       string         `json:"id"`
+	Content  string         `json:"content"`
+	Metadata map[string]any `json:"metadata"`
 }

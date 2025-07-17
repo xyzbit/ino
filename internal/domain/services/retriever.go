@@ -2,13 +2,14 @@ package services
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/milvus"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/pkg/errors"
+	"github.com/samber/lo"
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
 	"github.com/xyzbit/ino/pkg/constants"
@@ -31,19 +32,20 @@ func NewRetriever() (*Retriever, error) {
 }
 
 func (r *Retriever) Exec(ctx context.Context, req *types.RetrieveRequest) (*types.RetrieveResponse, error) {
-	documents, err := r.milvus.Retrieve(ctx, "milvus")
+	documents, err := r.milvus.Retrieve(ctx, req.Query, retriever.WithTopK(2), retriever.WithScoreThreshold(0.5))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to retrieve")
 	}
 
-	for i, doc := range documents {
-		fmt.Printf("Document %d:\n", i)
-		fmt.Printf("title: %s\n", doc.ID)
-		fmt.Printf("content: %s\n", doc.Content)
-		fmt.Printf("metadata: %v\n", doc.MetaData)
-	}
-
-	return &types.RetrieveResponse{}, nil
+	return &types.RetrieveResponse{
+		RetrieveItems: lo.Map(documents, func(doc *schema.Document, _ int) types.RetrieveItem {
+			return types.RetrieveItem{
+				ID:       doc.ID,
+				Content:  doc.Content,
+				Metadata: doc.MetaData,
+			}
+		}),
+	}, nil
 }
 
 func newMilvusRetriever(ctx context.Context) (retriever.Retriever, error) {
@@ -59,6 +61,7 @@ func newMilvusRetriever(ctx context.Context) (retriever.Retriever, error) {
 	}
 
 	// Create a retriever
+	sp, _ := entity.NewIndexAUTOINDEXSearchParam(1)
 	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
 		Client:     milvusClient.Client,
 		Collection: constants.VectorCollectionName,
@@ -67,10 +70,10 @@ func newMilvusRetriever(ctx context.Context) (retriever.Retriever, error) {
 			"content",
 			"metadata",
 		},
-		MetricType:     constants.VectorMetricType,
-		TopK:           5,
-		ScoreThreshold: 0.5,
-		Embedding:      emb,
+		MetricType: constants.VectorMetricType,
+		TopK:       5,
+		Sp:         sp,
+		Embedding:  emb,
 		VectorConverter: func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
 			vec := make([]entity.Vector, 0, len(vectors))
 			for _, vector := range vectors {

@@ -268,6 +268,8 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 	var cypher string
 	var params map[string]interface{}
 	relationshipType := sanitizeRelationshipType(pair.Relation.Type)
+	fromType := sanitizeEntityType(pair.From.Type)
+	toType := sanitizeEntityType(pair.To.Type)
 
 	// Build cypher query based on search results
 	if destNodeResult == nil && sourceNodeResult != nil {
@@ -287,7 +289,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, pair.To.Type, relationshipType)
+		`, toType, relationshipType)
 
 		params = map[string]interface{}{
 			"source_id":             sourceNodeResult.ID,
@@ -312,7 +314,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, pair.From.Type, relationshipType)
+		`, fromType, relationshipType)
 
 		params = map[string]interface{}{
 			"destination_id":   destNodeResult.ID,
@@ -358,7 +360,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 rel.hit = coalesce(rel.hit, 0) + 1
 			RETURN n.name AS source, type(rel) AS relationship, m.name AS target
-		`, pair.From.Type, pair.To.Type, relationshipType)
+		`, fromType, toType, relationshipType)
 
 		params = map[string]interface{}{
 			"source_name":      pair.From.Name,
@@ -660,6 +662,17 @@ type SearchResult struct {
 	Name  string  `json:"name"`
 	Type  string  `json:"type"`
 	Score float64 `json:"score"`
+}
+
+func sanitizeEntityType(entityType string) string {
+	entityType = strings.ReplaceAll(entityType, "（", "(")
+	entityType = strings.ReplaceAll(entityType, "）", ")")
+	entityType = strings.ReplaceAll(entityType, "(", "_")
+	entityType = strings.ReplaceAll(entityType, ")", "_")
+	entityType = strings.ReplaceAll(entityType, " ", "_")
+	entityType = strings.ReplaceAll(entityType, "-", "_")
+	entityType = strings.ReplaceAll(entityType, "，", "_")
+	return entityType
 }
 
 // sanitizeRelationshipType cleans relationship type names to make them valid for Neo4j
