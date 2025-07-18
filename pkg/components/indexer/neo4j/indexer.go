@@ -495,16 +495,11 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	for _, msg := range msgs {
-		log.Println("msg", msg.Content)
-	}
 
 	output, err := i.Extractor.Generate(ctx, msgs)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-
-	log.Println("output", output.Content)
 
 	extractEntityAndRelation := ExtractEntityAndRelation{}
 	if err := sonic.Unmarshal([]byte(output.Content), &extractEntityAndRelation); err != nil {

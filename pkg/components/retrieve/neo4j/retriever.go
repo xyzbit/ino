@@ -1,4 +1,4 @@
-package indexer
+package neo4j
 
 import (
 	"context"
@@ -60,8 +60,30 @@ type RetrieverImplOptions struct {
 	Limit               int
 	SimilarityThreshold float64
 	MaxDepth            int
-	EntityTypes         []string
-	IncludeRelations    bool
+}
+
+func WithTopK(topK int) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
+		o.TopK = topK
+	})
+}
+
+func WithLimit(limit int) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
+		o.Limit = limit
+	})
+}
+
+func WithSimilarityThreshold(similarityThreshold float64) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
+		o.SimilarityThreshold = similarityThreshold
+	})
+}
+
+func WithMaxDepth(maxDepth int) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
+		o.MaxDepth = maxDepth
+	})
 }
 
 // NewRetriever 创建新的Neo4j检索器
@@ -87,7 +109,6 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		TopK:                r.config.TopK,
 		SimilarityThreshold: r.config.SimilarityThreshold,
 		MaxDepth:            r.config.MaxDepth,
-		IncludeRelations:    true,
 		Limit:               r.config.Limit,
 	}, opts...)
 
@@ -128,7 +149,6 @@ func (r *Retriever) graphSearch(ctx context.Context, session neo4j.SessionWithCo
 		"query_embedding":      embeddingList,
 		"similarity_threshold": opts.SimilarityThreshold,
 		"top_k":                opts.TopK,
-		"max_depth":            opts.MaxDepth,
 		"limit":                opts.Limit,
 	}
 
@@ -164,54 +184,39 @@ func (r *Retriever) graphSearch(ctx context.Context, session neo4j.SessionWithCo
 
 // buildSearchCypher 构建搜索的Cypher查询
 func (r *Retriever) buildSearchCypher(opts *RetrieverImplOptions) string {
-	if opts.IncludeRelations {
-		// 包含关系的图遍历查询
-		return `
+	return fmt.Sprintf(`
 			CALL db.index.vector.queryNodes('entity_embedding_index', $top_k, $query_embedding)
 			YIELD node, score
 			WHERE score >= $similarity_threshold
 			
 			// 获取相关实体和关系
-			OPTIONAL MATCH (node)-[rels*1..$max_depth]-(related:Entity)
+			OPTIONAL MATCH (node)-[rels*1..%d]-(related:Entity)
 			WHERE all(r IN rels WHERE r.hit >= 1)  // 只获取有足够支撑的关系
 			
-			WITH node, rels, related
+			WITH node, rels, related, score
 			
 			RETURN 
 			    node.name as entity_name,
 			    node.type as entity_type,
 				related.name as related_name,
 				related.type as related_type,
-				[rel in rels | type(rel)] as relation_types,
-                size(rels) as hop_count,
+				[rel in rels | type(rel)] as relations,
+                size(rels) as layer,
 				score
-			ORDER BY hop_count ASC, score DESC
+			ORDER BY score DESC, layer ASC
 
 			LIMIT $limit
-		`
-	} else {
-		// 简单的实体相似度搜索
-		return `
-			CALL db.index.vector.queryNodes('entity_embedding_index', $top_k, $query_embedding)
-			YIELD node, score
-			WHERE score >= $similarity_threshold
-			
-			RETURN 
-			    node.name as entity_name,
-			    node.type as entity_type,
-			    score,
-			    [] as relations
-			ORDER BY score DESC
-		`
-	}
+		`, opts.MaxDepth)
 }
 
 // recordToDocument 将Neo4j记录转换为schema.Document
 func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string) (*schema.Document, error) {
 	entityName, _ := record.Get("entity_name")
 	entityType, _ := record.Get("entity_type")
+	relatedName, _ := record.Get("related_name")
+	relatedType, _ := record.Get("related_type")
 	score, _ := record.Get("score")
-	properties, _ := record.Get("properties")
+	layer, _ := record.Get("layer")
 	relations, _ := record.Get("relations")
 
 	// 构建文档ID
@@ -219,17 +224,18 @@ func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string)
 
 	// 构建元数据
 	metadata := map[string]interface{}{
-		"source":       "neo4j_graph",
-		"entity_name":  entityName,
-		"entity_type":  entityType,
-		"score":        score,
-		"query":        originalQuery,
-		"retrieved_at": time.Now().Unix(),
+		"source":                       "neo4j_graph",
+		"entity_name":                  entityName,
+		"entity_type":                  entityType,
+		"related_name":                 relatedName,
+		"related_type":                 relatedType,
+		"query_entity_relevance_score": score, // 查询和实体相似度得分
+		"retrieved_at":                 time.Now().Unix(),
 	}
 
 	// 添加实体属性
-	if properties != nil {
-		metadata["entity_properties"] = properties
+	if layer != nil {
+		metadata["relation_layer"] = layer
 	}
 
 	// 添加关系信息
@@ -238,7 +244,7 @@ func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string)
 	}
 
 	// 构建更丰富的文档内容
-	docContent := r.buildDocumentContent(entityName, entityType, properties, relations, originalQuery)
+	docContent := r.buildDocumentContent(entityName, entityType, relatedName, relatedType, relations)
 
 	return &schema.Document{
 		ID:       docID,
@@ -248,33 +254,17 @@ func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string)
 }
 
 // buildDocumentContent 构建文档内容
-func (r *Retriever) buildDocumentContent(entityName, entityType interface{}, properties, relations interface{}, query string) string {
-	content := fmt.Sprintf("实体: %v (%v)\n", entityName, entityType)
-
-	// 添加属性信息
-	if properties != nil {
-		if props, ok := properties.(map[string]interface{}); ok && len(props) > 0 {
-			content += "属性:\n"
-			for key, value := range props {
-				content += fmt.Sprintf("  - %s: %v\n", key, value)
-			}
-		}
-	}
+func (r *Retriever) buildDocumentContent(entityName, entityType interface{}, relatedName, relatedType interface{}, relations interface{}) string {
+	content := fmt.Sprintf("实体:(%v (%v))", entityName, entityType)
 
 	// 添加关系信息
 	if relations != nil {
-		if rels, ok := relations.([]interface{}); ok && len(rels) > 0 {
-			content += "相关关系:\n"
-			for _, rel := range rels {
-				if relMap, ok := rel.(map[string]interface{}); ok {
-					content += fmt.Sprintf("  - %v: %v (%v)\n",
-						relMap["relation"], relMap["entity"], relMap["entity_type"])
-				}
-			}
-		}
+		content += fmt.Sprintf("-> 关系: %v ->", relations)
+	} else {
+		content += "->"
 	}
 
-	content += fmt.Sprintf("\n[检索查询: %s]", query)
+	content += fmt.Sprintf("相关实体:(%v (%v))\n", relatedName, relatedType)
 
 	return content
 }

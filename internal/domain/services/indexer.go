@@ -106,37 +106,35 @@ func (i *Indexer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) 
 	if err != nil {
 		return err
 	}
-	ids, err := runner.Invoke(ctx, req)
+	reply, err := runner.Invoke(ctx, req)
 	if err != nil {
 		return err
 	}
-	fmt.Println(ids)
+	fmt.Println(reply)
 	return nil
 }
 
-func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, []string], err error) {
+func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnable[*types.CollectKnowledgeRequest, map[string]any], err error) {
 
-	g := compose.NewGraph[*types.CollectKnowledgeRequest, []string]()
+	g := compose.NewGraph[*types.CollectKnowledgeRequest, map[string]any]()
 
 	// add node
 	_ = g.AddLambdaNode(nodeRequestToDocs, compose.InvokableLambdaWithOption(requestToDocs))
 	_ = g.AddDocumentTransformerNode(nodeAutoSpliter, i.autoSpliter)
-	_ = g.AddIndexerNode(nodeMilvusIndexer, i.vectorIndexer)
-	_ = g.AddIndexerNode(nodeNeo4jIndexer, i.graphIndexer)
-	_ = g.AddIndexerNode(nodeRedisIndexer, i.redisIndexer)
+	_ = g.AddIndexerNode(nodeMilvusIndexer, i.vectorIndexer, compose.WithOutputKey("milvus_ids"))
+	_ = g.AddIndexerNode(nodeNeo4jIndexer, i.graphIndexer, compose.WithOutputKey("neo4j_ids"))
+	_ = g.AddIndexerNode(nodeRedisIndexer, i.redisIndexer, compose.WithOutputKey("redis_ids"))
 	_ = g.AddLambdaNode(nodeKnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
 	// add edge
 	_ = g.AddEdge(compose.START, nodeRequestToDocs)
 	_ = g.AddEdge(nodeRequestToDocs, nodeAutoSpliter)
 	_ = g.AddEdge(nodeAutoSpliter, nodeKnowledgeExtractor)
 	_ = g.AddEdge(nodeKnowledgeExtractor, nodeMilvusIndexer)
-	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
-	// _ = g.AddEdge(nodeKnowledgeExtractor, nodeRedisIndexer)
 	_ = g.AddEdge(nodeKnowledgeExtractor, nodeNeo4jIndexer)
-	// _ = g.AddEdge(nodeRedisIndexer, compose.END)
+	_ = g.AddEdge(nodeMilvusIndexer, compose.END)
 	_ = g.AddEdge(nodeNeo4jIndexer, compose.END)
 
-	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AnyPredecessor))
+	r, err = g.Compile(ctx, compose.WithGraphName("KnowledgeIndexing"), compose.WithNodeTriggerMode(compose.AllPredecessor))
 	if err != nil {
 		return nil, err
 	}
