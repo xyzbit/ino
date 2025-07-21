@@ -18,11 +18,20 @@ type CollectKnowledgeResponse struct {
 	Message string `json:"message"`
 }
 
+const (
+	QueryStrategyQuick = "quick"
+	QueryStrategyAgent = "agent"
+)
+
 type RetrieveRequest struct {
 	Query string `json:"query"`
+	// 查询策略，默认是 "quick"，可选 "quick" 和 "agent"
+	// quick: 快速查询，agent: 智能查询
+	QueryStrategy string `json:"query_strategy"`
 }
 
 type RetrieveResponse struct {
+	Content       string         `json:"content"`
 	RetrieveItems []RetrieveItem `json:"retrieve_items"`
 }
 

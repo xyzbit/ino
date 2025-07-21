@@ -3,11 +3,16 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino-ext/components/retriever/milvus"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/pkg/errors"
@@ -25,10 +30,17 @@ const (
 	nodeNeo4jRetriever  = "neo4j_retriever"
 )
 
+type QueryStrategyHandler func(ctx context.Context, query string) (*types.RetrieveResponse, error)
+
+// queryStrategiesHandlers 查询策略处理器集合.
+// note: not thread safe
+var queryStrategiesHandlers = make(map[string]QueryStrategyHandler)
+
 // Retriever 检索器
 type Retriever struct {
-	milvus retriever.Retriever
-	neo4j  retriever.Retriever
+	milvus      retriever.Retriever
+	neo4j       retriever.Retriever
+	agentConfig *react.AgentConfig
 }
 
 func NewRetriever() (*Retriever, error) {
@@ -40,19 +52,38 @@ func NewRetriever() (*Retriever, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create neo4j retriever")
 	}
-	return &Retriever{
-		milvus: milvusRetriever,
-		neo4j:  neo4jRetriever,
-	}, nil
+
+	agentConfig, err := newAgentConfig(context.Background(), milvusRetriever, neo4jRetriever)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create agent")
+	}
+
+	r := &Retriever{
+		milvus:      milvusRetriever,
+		neo4j:       neo4jRetriever,
+		agentConfig: agentConfig,
+	}
+	queryStrategiesHandlers[types.QueryStrategyQuick] = r.RetrieveQuick
+	queryStrategiesHandlers[types.QueryStrategyAgent] = r.RetrieveAgent
+
+	return r, nil
 }
 
 func (r *Retriever) Exec(ctx context.Context, req *types.RetrieveRequest) (*types.RetrieveResponse, error) {
+	handler, ok := queryStrategiesHandlers[req.QueryStrategy]
+	if !ok {
+		return nil, errors.New("query strategy not found")
+	}
+	return handler(ctx, req.Query)
+}
+
+func (r *Retriever) RetrieveQuick(ctx context.Context, query string) (*types.RetrieveResponse, error) {
 	re, err := r.buildKnowledgeRetriever(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err := re.Invoke(ctx, req.Query)
+	reply, err := re.Invoke(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +120,53 @@ func (r *Retriever) Exec(ctx context.Context, req *types.RetrieveRequest) (*type
 
 	return &types.RetrieveResponse{
 		RetrieveItems: append(milvusItems, neo4jItems...),
+	}, nil
+}
+
+type VectorDBSearchParams struct {
+	Query          string  `json:"query" jsonschema:"required,description=the query to search"`
+	TopK           int     `json:"top_k" jsonschema:"description=the top k results to return, default is no limit"`
+	ScoreThreshold float64 `json:"score_threshold" jsonschema:"description=the score threshold to filter results, default is no filter"`
+}
+
+type GraphDBSearchParams struct {
+	Query          string  `json:"query" jsonschema:"required,description=the query to search"`
+	TopK           int     `json:"top_k" jsonschema:"description=the top k results to return, default is no limit"`
+	ScoreThreshold float64 `json:"score_threshold" jsonschema:"description=the score threshold to filter results, default is no filter"`
+	MaxDepth       int     `json:"max_depth" jsonschema:"description=the max depth to search, default is 2"`
+	Limit          int     `json:"limit" jsonschema:"description=the limit to search, default is 50"`
+}
+
+func (r *Retriever) RetrieveAgent(ctx context.Context, query string) (*types.RetrieveResponse, error) {
+	agent, err := react.NewAgent(ctx, r.agentConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	reply, err := agent.Generate(ctx, []*schema.Message{
+		schema.SystemMessage(`
+		你是一位具备深度检索与精准整合能力的知识库专家。当接收用户问题时，请遵循以下要求执行任务：
+
+深度检索启动：以问题核心为锚点，全面遍历知识库相关领域内容，包括但不限于核心概念、关联背景、细分维度、典型案例及权威解释。若初始检索信息不足，需进一步拓展检索范围，挖掘次级关联内容，确保覆盖问题涉及的关键细节与潜在延伸点。
+信息筛选与验证：对检索到的内容进行真实性、相关性校验，优先保留权威来源、逻辑严谨的信息，剔除冗余或冲突内容，确保回答的准确性与可靠性。
+深度与完整性保障：回答需覆盖用户问题的显性需求与合理隐性需求，避免浅尝辄止。若问题存在多视角解读，需客观呈现不同观点并说明适用场景，确保回答的全面性与深度
+返回内容格式：
+{
+	"content": "返回内容",
+	"reasoning_content": "推理内容"
+}
+`),
+		schema.UserMessage(query),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	reasoningContent := reply.ReasoningContent
+	log.Printf("reasoningContent: %s", reasoningContent)
+
+	return &types.RetrieveResponse{
+		Content: reasoningContent,
 	}, nil
 }
 
@@ -189,4 +267,100 @@ func newNeo4jRetriever(ctx context.Context) (retriever.Retriever, error) {
 	}
 
 	return r, nil
+}
+
+func newAgentConfig(
+	ctx context.Context,
+	milvusRetriever retriever.Retriever,
+	neo4jRetriever retriever.Retriever,
+) (agentConfig *react.AgentConfig, err error) {
+	llmConfig := config.AppConfig.Retriever.LLM
+
+	// init chat model
+	toolableChatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		Model:   llmConfig.Model,
+		BaseURL: llmConfig.BaseURL,
+		APIKey:  llmConfig.APIKey,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create chat model")
+	}
+
+	// init tools
+	vectorDBSearchToolInfo, err := utils.GoStruct2ToolInfo[VectorDBSearchParams](
+		"search_by_vector_db",
+		"在向量数据库 milvus 中搜索相关内容",
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create vector db search tool")
+	}
+
+	vectorDBSearchTool := utils.NewTool(vectorDBSearchToolInfo,
+		func(ctx context.Context, input *VectorDBSearchParams) (output []*schema.Document, err error) {
+			if input == nil {
+				return nil, errors.New("input is nil")
+			}
+
+			opts := make([]retriever.Option, 0)
+			if input.ScoreThreshold != 0 {
+				opts = append(opts, retriever.WithScoreThreshold(input.ScoreThreshold))
+			}
+			if input.TopK != 0 {
+				opts = append(opts, retriever.WithTopK(input.TopK))
+			}
+
+			docs, err := milvusRetriever.Retrieve(ctx, input.Query, opts...)
+			if err != nil {
+				return nil, err
+			}
+			return docs, nil
+		},
+	)
+
+	graphDBSearchToolInfo, err := utils.GoStruct2ToolInfo[GraphDBSearchParams](
+		"search_entity_and_relation_by_graph_db",
+		"在图数据库 neo4j 中搜索实体和关系",
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create graph db search tool")
+	}
+	graphDBSearchTool := utils.NewTool(graphDBSearchToolInfo,
+		func(ctx context.Context, input *GraphDBSearchParams) (output []*schema.Document, err error) {
+			if input == nil {
+				return nil, errors.New("input is nil")
+			}
+
+			opts := make([]retriever.Option, 0)
+			if input.ScoreThreshold != 0 {
+				opts = append(opts, neo4j.WithSimilarityThreshold(input.ScoreThreshold))
+			}
+			if input.TopK != 0 {
+				opts = append(opts, neo4j.WithTopK(input.TopK))
+			}
+			if input.MaxDepth != 0 {
+				opts = append(opts, neo4j.WithMaxDepth(input.MaxDepth))
+			}
+			if input.Limit != 0 {
+				opts = append(opts, neo4j.WithLimit(input.Limit))
+			}
+
+			docs, err := neo4jRetriever.Retrieve(ctx, input.Query, opts...)
+			if err != nil {
+				return nil, err
+			}
+			return docs, nil
+		},
+	)
+
+	// create agent
+	return &react.AgentConfig{
+		ToolCallingModel: toolableChatModel,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []tool.BaseTool{
+				vectorDBSearchTool,
+				graphDBSearchTool,
+			},
+		},
+		MaxStep: 10,
+	}, nil
 }
