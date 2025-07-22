@@ -1,14 +1,57 @@
-## 简介
-大模型应用当前有着 没有长期记忆、缺乏业务知识、缺乏实时性等问题，这些问题的本质是大模型自主获取｜记录部分知识，比如：
-- 企业私有知识
-- 记忆数据，如用户行为、反馈、偏好...
-这些可以统称为知识，当前有着 RAG、Memeroy System等等解决方案，去补充各种类型的知识，但是接入复杂，有很多重复工作。所以有了 KAG（Knowledge-Augmented Generation）或者叫 统一检索框架（Unified Retrieval Framework），这个系统的核心思想是：将所有可能对LLM有帮助的信息源（外部文档、对话历史、用户画像等）视为可检索的“知识”，并建立一个统一的框架来智能地检索、筛选、整合这些知识，最后以最优化的方式注入到Prompt中。
+# React + TypeScript + Vite
 
-## 如何开发
-> ！注意需要先安装 Docker
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-### 启动依赖组件
-make services-up
+Currently, two official plugins are available:
 
-### 运行 ino
-make dev
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default tseslint.config({
+  extends: [
+    // Remove ...tseslint.configs.recommended and replace with this
+    ...tseslint.configs.recommendedTypeChecked,
+    // Alternatively, use this for stricter rules
+    ...tseslint.configs.strictTypeChecked,
+    // Optionally, add this for stylistic rules
+    ...tseslint.configs.stylisticTypeChecked,
+  ],
+  languageOptions: {
+    // other options...
+    parserOptions: {
+      project: ['./tsconfig.node.json', './tsconfig.app.json'],
+      tsconfigRootDir: import.meta.dirname,
+    },
+  },
+})
+```
+
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
+
+export default tseslint.config({
+  extends: [
+    // other configs...
+    // Enable lint rules for React
+    reactX.configs['recommended-typescript'],
+    // Enable lint rules for React DOM
+    reactDom.configs.recommended,
+  ],
+  languageOptions: {
+    // other options...
+    parserOptions: {
+      project: ['./tsconfig.node.json', './tsconfig.app.json'],
+      tsconfigRootDir: import.meta.dirname,
+    },
+  },
+})
+```
