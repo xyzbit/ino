@@ -43,9 +43,9 @@ const Navbar: React.FC = () => {
             className="flex items-center space-x-2 cursor-pointer"
           >
             <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">K</span>
+              <span className="text-white font-bold text-sm">i</span>
             </div>
-            <span className="text-xl font-bold text-white">KAG System</span>
+            <span className="text-xl font-bold text-white">ino</span>
           </motion.div>
 
           {/* Desktop Navigation */}
@@ -66,7 +66,7 @@ const Navbar: React.FC = () => {
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center space-x-4">
             <motion.a
-              href="https://github.com"
+              href="https://github.com/xyzbit/ino"
               target="_blank"
               rel="noopener noreferrer"
               whileHover={{ scale: 1.1, rotate: 5 }}

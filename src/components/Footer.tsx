@@ -43,7 +43,7 @@ const Footer: React.FC = () => {
   ];
 
   const socialLinks = [
-    { icon: Github, href: 'https://github.com', label: 'GitHub' },
+    { icon: Github, href: 'https://github.com/xyzbit/ino', label: 'GitHub' },
     { icon: Twitter, href: 'https://twitter.com', label: 'Twitter' },
     { icon: Linkedin, href: 'https://linkedin.com', label: 'LinkedIn' },
     { icon: Mail, href: 'mailto:contact@kag-system.com', label: 'Email' },

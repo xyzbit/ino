@@ -4,7 +4,7 @@ import { ChevronRight, Zap, Database, Brain } from 'lucide-react';
 
 const HeroSection: React.FC = () => {
   const [text, setText] = useState('');
-  const fullText = 'KAG - Knowledge Augmented Generation';
+  const fullText = 'ino - i know everything';
   
   useEffect(() => {
     let index = 0;
