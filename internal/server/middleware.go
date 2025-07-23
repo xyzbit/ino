@@ -19,11 +19,6 @@ func middlewareSetHeaderContext(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// if header.CollectionKey == "" {
-	// 	c.JSON(http.StatusBadRequest, gin.H{"error": "collection_id is required"})
-	// 	c.Abort()
-	// 	return
-	// }
 	if header.RequestID == "" {
 		header.RequestID = uuid.New().String()
 	}
