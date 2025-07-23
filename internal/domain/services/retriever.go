@@ -138,18 +138,20 @@ type GraphDBSearchParams struct {
 }
 
 func (r *Retriever) RetrieveAgent(ctx context.Context, query string) (*types.RetrieveResponse, error) {
-	agent, err := react.NewAgent(ctx, r.agentConfig)
+	ragent, err := react.NewAgent(ctx, r.agentConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	reply, err := agent.Generate(ctx, []*schema.Message{
+	reply, err := ragent.Generate(ctx, []*schema.Message{
 		schema.SystemMessage(`
 		你是一位具备深度检索与精准整合能力的知识库专家。当接收用户问题时，请遵循以下要求执行任务：
 
 深度检索启动：以问题核心为锚点，全面遍历知识库相关领域内容，包括但不限于核心概念、关联背景、细分维度、典型案例及权威解释。若初始检索信息不足，需进一步拓展检索范围，挖掘次级关联内容，确保覆盖问题涉及的关键细节与潜在延伸点。
 信息筛选与验证：对检索到的内容进行真实性、相关性校验，优先保留权威来源、逻辑严谨的信息，剔除冗余或冲突内容，确保回答的准确性与可靠性。
-深度与完整性保障：回答需覆盖用户问题的显性需求与合理隐性需求，避免浅尝辄止。若问题存在多视角解读，需客观呈现不同观点并说明适用场景，确保回答的全面性与深度
+深度与完整性保障：回答需覆盖用户问题的显性需求与合理隐性需求，避免浅尝辄止。若问题存在多视角解读，需客观呈现不同观点并说明适用场景，确保回答的全面性与深度。
+多轮检索：如果检索到的内容不足以回答用户问题，请继续检索、分析，直到找到足够的信息为止。
+
 返回内容格式：
 {
 	"content": "返回内容",
@@ -162,11 +164,10 @@ func (r *Retriever) RetrieveAgent(ctx context.Context, query string) (*types.Ret
 		return nil, err
 	}
 
-	reasoningContent := reply.ReasoningContent
-	log.Printf("reasoningContent: %s", reasoningContent)
+	log.Printf("reasoningContent: %s", reply.ReasoningContent)
 
 	return &types.RetrieveResponse{
-		Content: reasoningContent,
+		Content: reply.Content,
 	}, nil
 }
 
@@ -275,6 +276,7 @@ func newAgentConfig(
 	neo4jRetriever retriever.Retriever,
 ) (agentConfig *react.AgentConfig, err error) {
 	llmConfig := config.AppConfig.Retriever.LLM
+	maxRounds := config.AppConfig.Retriever.MaxRounds
 
 	// init chat model
 	toolableChatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
@@ -361,6 +363,6 @@ func newAgentConfig(
 				graphDBSearchTool,
 			},
 		},
-		MaxStep: 10,
+		MaxStep: maxRounds,
 	}, nil
 }

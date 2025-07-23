@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
@@ -103,7 +105,7 @@ func NewRetriever(ctx context.Context, conf *RetrieverConfig) (*Retriever, error
 }
 
 // Retrieve 实现eino Retriever接口的检索方法
-func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	// 获取检索选项
 	options := retriever.GetImplSpecificOptions(&RetrieverImplOptions{
 		TopK:                r.config.TopK,
@@ -111,6 +113,22 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		MaxDepth:            r.config.MaxDepth,
 		Limit:               r.config.Limit,
 	}, opts...)
+
+	// callback
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
+	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
+		Query:          query,
+		TopK:           options.TopK,
+		ScoreThreshold: &options.SimilarityThreshold,
+		Extra: map[string]any{
+			"limit": options.Limit,
+		},
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	// 生成查询的embedding
 	queryEmbedding, err := r.config.EmbeddingModel.EmbedStrings(ctx, []string{query})
@@ -130,6 +148,8 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform graph search: %w", err)
 	}
+
+	callbacks.OnEnd(ctx, &retriever.CallbackOutput{Docs: documents})
 
 	return documents, nil
 }

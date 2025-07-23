@@ -17,6 +17,10 @@ func (o *OpenAPI) SearchKnowledge(c *gin.Context) {
 		return
 	}
 
+	if req.QueryStrategy == "" {
+		req.QueryStrategy = types.QueryStrategyQuick
+	}
+
 	resp, err := o.retriever.Exec(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
