@@ -102,6 +102,7 @@ func NewIndexer() (*Indexer, error) {
 }
 
 func (i *Indexer) Exec(ctx context.Context, req *types.CollectKnowledgeRequest) error {
+	ctx = context.WithoutCancel(ctx) // 取消上下文取消, 这是一个长任务后续会异步化
 	runner, err := i.buildKnowledgeIndexing(ctx)
 	if err != nil {
 		return err
@@ -151,7 +152,7 @@ func requestToDocs(ctx context.Context, input *types.CollectKnowledgeRequest, op
 			},
 		}, nil
 	}
-	config := &file.FileLoaderConfig{UseNameAsID: true}
+	config := &file.FileLoaderConfig{UseNameAsID: false}
 	ldr, err := file.NewFileLoader(ctx, config)
 	if err != nil {
 		return nil, err
@@ -162,6 +163,11 @@ func requestToDocs(ctx context.Context, input *types.CollectKnowledgeRequest, op
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, doc := range docs {
+		if doc.ID == "" {
+			doc.ID = uuid.New().String()
+		}
 	}
 	return docs, nil
 }

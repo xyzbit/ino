@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino-ext/components/retriever/milvus"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -17,10 +17,13 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
+
 	"github.com/xyzbit/ino/config"
 	"github.com/xyzbit/ino/internal/application/openapi/types"
-	"github.com/xyzbit/ino/pkg/components/retrieve/neo4j"
+	pkgmilvus "github.com/xyzbit/ino/pkg/components/retriever/milvus"
+	pkgneo4j "github.com/xyzbit/ino/pkg/components/retriever/neo4j"
 	"github.com/xyzbit/ino/pkg/constants"
+	"github.com/xyzbit/ino/pkg/ctxwarp"
 	milvusClient "github.com/xyzbit/ino/pkg/infra/milvus"
 	neo4jClient "github.com/xyzbit/ino/pkg/infra/neo4j"
 )
@@ -28,6 +31,17 @@ import (
 const (
 	nodeMilvusRetriever = "milvus_retriever"
 	nodeNeo4jRetriever  = "neo4j_retriever"
+)
+
+// default query params for retriever
+const (
+	defaultVectorSpLevel = 1
+	defaultVectorTopK    = 5
+
+	defaultGraphSpLevel             = 2
+	defaultGraphTopK                = 5
+	defaultGraphLimit               = 30
+	defaultGraphSimilarityThreshold = 0.8
 )
 
 type QueryStrategyHandler func(ctx context.Context, query string) (*types.RetrieveResponse, error)
@@ -82,8 +96,23 @@ func (r *Retriever) RetrieveQuick(ctx context.Context, query string) (*types.Ret
 	if err != nil {
 		return nil, err
 	}
+	// search the filter
+	opts := make([]compose.Option, 0)
+	header := ctxwarp.GetHeaderContext(ctx)
+	if header != nil {
+		filters := make([]string, 0)
+		if header.CollectionKey != "" {
+			filters = append(filters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.CollectionKey, header.CollectionKey))
+		}
+		if header.UserKey != "" {
+			filters = append(filters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.UserKey, header.UserKey))
+		}
+		if len(filters) > 0 {
+			opts = append(opts, compose.WithRetrieverOption(pkgmilvus.WithFilter(strings.Join(filters, " AND "))))
+		}
+	}
 
-	reply, err := re.Invoke(ctx, query)
+	reply, err := re.Invoke(ctx, query, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +235,8 @@ func newMilvusRetriever(ctx context.Context) (retriever.Retriever, error) {
 	}
 
 	// Create a retriever
-	sp, _ := entity.NewIndexAUTOINDEXSearchParam(1)
-	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
+	defaultSp, _ := entity.NewIndexAUTOINDEXSearchParam(defaultVectorSpLevel)
+	retriever, err := pkgmilvus.NewRetriever(ctx, &pkgmilvus.RetrieverConfig{
 		Client:     milvusClient.Client,
 		Collection: constants.VectorCollectionName,
 		OutputFields: []string{
@@ -216,8 +245,8 @@ func newMilvusRetriever(ctx context.Context) (retriever.Retriever, error) {
 			"metadata",
 		},
 		MetricType: constants.VectorMetricType,
-		TopK:       5,
-		Sp:         sp,
+		TopK:       defaultVectorTopK,
+		Sp:         defaultSp,
 		Embedding:  emb,
 		VectorConverter: func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
 			vec := make([]entity.Vector, 0, len(vectors))
@@ -253,15 +282,15 @@ func newNeo4jRetriever(ctx context.Context) (retriever.Retriever, error) {
 	}
 
 	// 创建Neo4j检索器
-	r, err := neo4j.NewRetriever(ctx, &neo4j.RetrieverConfig{
+	r, err := pkgneo4j.NewRetriever(ctx, &pkgneo4j.RetrieverConfig{
 		Driver:              neo4jClient.Driver,
 		Database:            "neo4j",
 		EmbeddingModel:      embeddingModel,
 		Dimension:           defaultDim,
-		SimilarityThreshold: 0.7,
-		MaxDepth:            2,
-		TopK:                10,
-		Limit:               50,
+		SimilarityThreshold: defaultGraphSimilarityThreshold,
+		MaxDepth:            defaultGraphSpLevel,
+		TopK:                defaultGraphTopK,
+		Limit:               defaultGraphLimit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Neo4j retriever: %w", err)
@@ -334,16 +363,16 @@ func newAgentConfig(
 
 			opts := make([]retriever.Option, 0)
 			if input.ScoreThreshold != 0 {
-				opts = append(opts, neo4j.WithSimilarityThreshold(input.ScoreThreshold))
+				opts = append(opts, pkgneo4j.WithSimilarityThreshold(input.ScoreThreshold))
 			}
 			if input.TopK != 0 {
-				opts = append(opts, neo4j.WithTopK(input.TopK))
+				opts = append(opts, pkgneo4j.WithTopK(input.TopK))
 			}
 			if input.MaxDepth != 0 {
-				opts = append(opts, neo4j.WithMaxDepth(input.MaxDepth))
+				opts = append(opts, pkgneo4j.WithMaxDepth(input.MaxDepth))
 			}
 			if input.Limit != 0 {
-				opts = append(opts, neo4j.WithLimit(input.Limit))
+				opts = append(opts, pkgneo4j.WithLimit(input.Limit))
 			}
 
 			docs, err := neo4jRetriever.Retrieve(ctx, input.Query, opts...)

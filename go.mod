@@ -3,6 +3,7 @@ module github.com/xyzbit/ino
 go 1.23.10
 
 require (
+	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.48
 	github.com/cloudwego/eino-ext/callbacks/langfuse v0.0.0-20250716023014-abdf457084e7
@@ -13,7 +14,6 @@ require (
 	github.com/cloudwego/eino-ext/components/indexer/milvus v0.0.0-20250708081507-4936951487dd
 	github.com/cloudwego/eino-ext/components/indexer/redis v0.0.0-20250710065240-482d48888f25
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250707040601-2fab92740585
-	github.com/cloudwego/eino-ext/components/retriever/milvus v0.0.0-20250716023014-abdf457084e7
 	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
@@ -21,6 +21,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/samber/lo v1.51.0
+	github.com/smartystreets/goconvey v1.8.1
 	github.com/spf13/viper v1.20.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
@@ -56,6 +57,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
+	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -63,6 +65,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -81,6 +84,7 @@ require (
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
+	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect

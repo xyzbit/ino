@@ -11,6 +11,8 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/xyzbit/ino/pkg/constants"
+	"github.com/xyzbit/ino/pkg/ctxwarp"
 )
 
 const (
@@ -25,6 +27,9 @@ type Config struct {
 	// Extractor is the model used to extract facts and peferences from documents
 	// Required
 	Extractor model.ToolCallingChatModel
+
+	// with source
+	WithSource bool
 }
 
 func NewExtractor(ctx context.Context, conf *Config) (*Extractor, error) {
@@ -81,16 +86,30 @@ func (k *Extractor) Extract(ctx context.Context, docs []*schema.Document, opts .
 		if err := json.Unmarshal([]byte(output.Content), &result); err != nil {
 			return nil, err
 		}
-		result.Source = doc.Content
+		if k.config.WithSource {
+			result.Source = doc.Content
+		}
 
 		jsonResult, err := json.Marshal(result)
 		if err != nil {
 			return nil, err
 		}
 
+		metaData := make(map[string]any)
+		header := ctxwarp.GetHeaderContext(ctx)
+		if header != nil {
+			if header.CollectionKey != "" {
+				metaData[constants.CollectionKey] = header.CollectionKey
+			}
+			if header.UserKey != "" {
+				metaData[constants.UserKey] = header.UserKey
+			}
+		}
+
 		results = append(results, &schema.Document{
-			ID:      doc.ID,
-			Content: string(jsonResult),
+			ID:       doc.ID,
+			Content:  string(jsonResult),
+			MetaData: metaData,
 		})
 
 		allIDs = append(allIDs, doc.ID)
