@@ -87,6 +87,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           options.TopK,
+		Filter:         options.GetFilter(),
 		ScoreThreshold: &options.SimilarityThreshold,
 		Extra: map[string]any{
 			"limit": options.Limit,
@@ -175,7 +176,7 @@ func (r *Retriever) buildSearchCypher(opts *RetrieverImplOptions) string {
 	return fmt.Sprintf(`
 			CALL db.index.vector.queryNodes('entity_embedding_index', $top_k, $query_embedding)
 			YIELD node, score
-			WHERE score >= $similarity_threshold
+			WHERE score >= $similarity_threshold %s
 			
 			// 获取相关实体和关系
 			OPTIONAL MATCH (node)-[rels*1..%d]-(related:Entity)
@@ -194,7 +195,7 @@ func (r *Retriever) buildSearchCypher(opts *RetrieverImplOptions) string {
 			ORDER BY score DESC, layer ASC
 
 			LIMIT $limit
-		`, opts.MaxDepth)
+		`, opts.GetFilter(), opts.MaxDepth)
 }
 
 // recordToDocument 将Neo4j记录转换为schema.Document
@@ -207,8 +208,12 @@ func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string)
 	layer, _ := record.Get("layer")
 	relations, _ := record.Get("relations")
 
+	if entityName == nil || relatedName == nil {
+		return nil, fmt.Errorf("entity name or related name is nil")
+	}
+
 	// 构建文档ID
-	docID := fmt.Sprintf("neo4j_entity_%s_%s", entityType, entityName)
+	docID := fmt.Sprintf("neo4j_entity_%v_%v", entityType, entityName)
 
 	// 构建元数据
 	metadata := map[string]interface{}{

@@ -34,6 +34,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/pkg/errors"
+	"github.com/xyzbit/ino/pkg/constants"
 	"github.com/xyzbit/ino/pkg/ctxwarp"
 )
 
@@ -487,9 +488,16 @@ func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, 
 // extractEntitiesAndRelations extracts entities and relations from a document using LLM
 func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (StorePairs, error) {
 	// Use the prompt from models to extract entities and relations
+	userKey := ctxwarp.GetHeaderContext(ctx).UserKey
+	if doc.MetaData[constants.UserKey] != "" {
+		u, ok := doc.MetaData[constants.UserKey].(string)
+		if ok {
+			userKey = u
+		}
+	}
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
-		"user_key":       ctxwarp.GetHeaderContext(ctx).UserKey,
+		"user_key":       userKey,
 		"resp_schema":    i.respSchema,
 	})
 	if err != nil {

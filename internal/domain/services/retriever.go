@@ -96,19 +96,26 @@ func (r *Retriever) RetrieveQuick(ctx context.Context, query string) (*types.Ret
 	if err != nil {
 		return nil, err
 	}
-	// search the filter
+
+	// search with filter
 	opts := make([]compose.Option, 0)
 	header := ctxwarp.GetHeaderContext(ctx)
 	if header != nil {
-		filters := make([]string, 0)
+		milvusFilters := make([]string, 0)
+		neo4jFilters := make(map[string]string, 0)
 		if header.CollectionKey != "" {
-			filters = append(filters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.CollectionKey, header.CollectionKey))
+			milvusFilters = append(milvusFilters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.CollectionKey, header.CollectionKey))
+			neo4jFilters[constants.CollectionKey] = header.CollectionKey
 		}
 		if header.UserKey != "" {
-			filters = append(filters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.UserKey, header.UserKey))
+			milvusFilters = append(milvusFilters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.UserKey, header.UserKey))
+			neo4jFilters[constants.UserKey] = header.UserKey
 		}
-		if len(filters) > 0 {
-			opts = append(opts, compose.WithRetrieverOption(pkgmilvus.WithFilter(strings.Join(filters, " AND "))))
+		if len(milvusFilters) > 0 {
+			opts = append(opts, compose.WithRetrieverOption(pkgmilvus.WithFilter(strings.Join(milvusFilters, " AND "))))
+		}
+		if len(neo4jFilters) > 0 {
+			opts = append(opts, compose.WithRetrieverOption(pkgneo4j.WithFilter(neo4jFilters)))
 		}
 	}
 

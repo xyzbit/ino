@@ -124,7 +124,7 @@ func (i *Indexer) buildKnowledgeIndexing(ctx context.Context) (r compose.Runnabl
 	_ = g.AddDocumentTransformerNode(nodeAutoSpliter, i.autoSpliter)
 	_ = g.AddIndexerNode(nodeMilvusIndexer, i.vectorIndexer, compose.WithOutputKey("milvus_ids"))
 	_ = g.AddIndexerNode(nodeNeo4jIndexer, i.graphIndexer, compose.WithOutputKey("neo4j_ids"))
-	_ = g.AddIndexerNode(nodeRedisIndexer, i.redisIndexer, compose.WithOutputKey("redis_ids"))
+	// _ = g.AddIndexerNode(nodeRedisIndexer, i.redisIndexer, compose.WithOutputKey("redis_ids"))
 	_ = g.AddLambdaNode(nodeKnowledgeExtractor, compose.InvokableLambdaWithOption(i.extractor))
 	// add edge
 	_ = g.AddEdge(compose.START, nodeRequestToDocs)

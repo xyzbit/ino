@@ -1,6 +1,10 @@
 package neo4j
 
-import "github.com/cloudwego/eino/components/retriever"
+import (
+	"fmt"
+
+	"github.com/cloudwego/eino/components/retriever"
+)
 
 // RetrieverImplOptions 检索器实现选项
 type RetrieverImplOptions struct {
@@ -8,7 +12,7 @@ type RetrieverImplOptions struct {
 	Limit               int
 	SimilarityThreshold float64
 	MaxDepth            int
-	Filter              string
+	Filter              map[string]string
 }
 
 func WithTopK(topK int) retriever.Option {
@@ -33,4 +37,22 @@ func WithMaxDepth(maxDepth int) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
 		o.MaxDepth = maxDepth
 	})
+}
+
+// {user_key: "123", collection_key: "456"}
+func WithFilter(filterKVs map[string]string) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
+		o.Filter = filterKVs
+	})
+}
+
+func (r *RetrieverImplOptions) GetFilter() string {
+	if len(r.Filter) == 0 {
+		return ""
+	}
+	filter := ""
+	for k, v := range r.Filter {
+		filter += fmt.Sprintf(" AND node.%s = \"%s\"", k, v)
+	}
+	return filter
 }
