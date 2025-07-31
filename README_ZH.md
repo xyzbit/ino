@@ -1,21 +1,47 @@
+[![License](https://img.shields.io/github/license/xyzbit/ino)](https://github.com/xyzbit/ino/blob/master/LICENSE)
+[![OpenIssue](https://img.shields.io/github/issues/xyzbit/ino)](https://github.com/xyzbit/ino/issues)
+[![ClosedIssue](https://img.shields.io/github/issues-closed/xyzbit/ino)](https://github.com/xyzbit/ino/issues?q=is%3Aissue%20state%3Aclosed)
+![Stars](https://img.shields.io/github/stars/xyzbit/ino)
+![Forks](https://img.shields.io/github/forks/xyzbit/ino)
+
+中文 | [English](README.md)
+
 ## 简介
 大模型应用当前有着 没有长期记忆、缺乏业务知识、缺乏实时性等问题，这些问题的本质是大模型自主获取｜记录部分知识，比如：
 - 企业私有知识
 - 记忆数据，如用户行为、反馈、偏好...
 这些可以统称为知识，当前有着 RAG、Memeroy System等等解决方案，去补充各种类型的知识，但是接入复杂，有很多重复工作。
 
-为了解决这些问题 ino 诞生了，所以有了 KAG（Knowledge-Augmented Generation）或者叫 统一检索框架（Unified Retrieval Framework），这个系统的核心思想是：将所有可能对LLM有帮助的信息源（外部文档、对话历史、用户画像等）视为可检索的“知识”，并建立一个统一的框架来智能地检索、筛选、整合这些知识，最后以最优化的方式注入到Prompt中。
+为了解决这些问题 **`ino[i konw]`** 诞生了，它是一个统一检索框架（Unified Retrieval Framework）。
 
-## 如何开发
-> ！注意需要先安装 Docker
+这个系统的核心思想是：将所有可能对LLM有帮助的信息源（外部文档、对话历史、用户画像等）视为可检索的`知识`，并建立一个统一的系统来智能地提取、检索、筛选、整合这些知识，最后以最优化的方式注入到`Prompt`中。
 
-### 启动依赖组件
-make services-up
+**`ino`** 的功能包括但不限于：
+- 向量数据库、图数据库索引
+- 快速检索相关数据，agent深度检索相关数据
+- 质量评估模块，用于评估当前系统召回质量，输出多维度评估报告
+- 反馈收集模块，用于收集用户反馈持续优化召回质量,输出点赞、点踩率变化
+- 数据质量治理，自动+人工解决过时、冲突、冗余数据
+- mcp、可视化cli等多种接入方式
 
-### 运行 ino
-make dev
+## 架构
+![](docs/ino-infra.png)
 
-## 如何使用
+### 核心流程
+**索引流程**，在请求内容中提取到事实和偏好信息后，进行了向量存储，以及图构建和图存储
+
+**召回流程**，区分快速和agent模式，快速模式适用于对返回延迟有要求的场景，agent模式提供跟深度的召回
+
+![](docs/ino-core-flow.png)
+
+
+
+## 快速开始
+
+### 启动服务
+```
+make up
+```
 
 ### 写入
 
@@ -66,5 +92,18 @@ curl --location 'http://localhost:8080/api/v1/openapi/search' \
 - `collection-key` (Header) 可选，用于筛选集合。
 - `query`: (Body) 必需，查询的问题。
 - `query_strategy`: (Body) 可选，查询策略，`quick`（默认）或 `agent`。
+
+
+## 如何开发
+> ！注意需要先安装 Docker
+
+### 启动依赖组件
+make services-up
+
+### 运行 ino
+make dev
+
+## RoadMap
+[RoadMap](docs/RoadMap.md)
 
 > 更多文档请在 ./docs 中查看
