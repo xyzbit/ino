@@ -50,7 +50,6 @@ make up
 **请求示例**
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/collect' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "content": "The quick brown fox jumps over the lazy dog."
@@ -59,7 +58,6 @@ curl --location 'http://localhost:8080/api/v1/openapi/collect' \
 或者通过链接写入
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/collect' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "content_link": "https://en.wikipedia.org/wiki/Fox"
@@ -80,7 +78,6 @@ curl --location 'http://localhost:8080/api/v1/openapi/collect' \
 **请求示例**
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/search' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "query": "What does the fox say?"

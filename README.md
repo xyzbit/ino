@@ -45,7 +45,6 @@ Use the `POST /api/v1/openapi/collect` endpoint to write knowledge.
 **Request Example**
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/collect' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "content": "The quick brown fox jumps over the lazy dog."
@@ -54,7 +53,6 @@ curl --location 'http://localhost:8080/api/v1/openapi/collect' \
 Or write knowledge via a link:
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/collect' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "content_link": "https://en.wikipedia.org/wiki/Fox"
@@ -75,7 +73,6 @@ Use the `POST /api/v1/openapi/search` endpoint to retrieve knowledge.
 **Request Example**
 ```bash
 curl --location 'http://localhost:8080/api/v1/openapi/search' \
---header 'user-key: <YOUR_USER_KEY>' \
 --header 'Content-Type: application/json' \
 --data '{
     "query": "What does the fox say?"
