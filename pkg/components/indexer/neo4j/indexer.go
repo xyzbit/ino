@@ -35,7 +35,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/pkg/errors"
 	"github.com/xyzbit/ino/pkg/constants"
-	"github.com/xyzbit/ino/pkg/ctxwarp"
+	infraNeo4j "github.com/xyzbit/ino/pkg/infra/neo4j"
 )
 
 const typ = "neo4j"
@@ -172,10 +172,6 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
 
-	// TODO: 解决冲突，获取相似节点，交给大模型判断是否需要删除。
-	// search_output = self._search_graph_db(node_list=list(entity_type_map.keys()), filters=filters)
-	// to_be_deleted = self._get_delete_entities_from_search_output(search_output, data, filters)
-
 	// Process in batches
 	var allIDs []string
 	batchSize := i.config.BatchSize
@@ -272,13 +268,24 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 	fromType := sanitizeEntityType(pair.From.Type)
 	toType := sanitizeEntityType(pair.To.Type)
 
+	var (
+		fromProperties string
+		toProperties   string
+	)
+	for k, v := range pair.From.Properties {
+		fromProperties += fmt.Sprintf(", %s: %v", k, v)
+	}
+	for k, v := range pair.To.Properties {
+		toProperties += fmt.Sprintf(", %s: %v", k, v)
+	}
+
 	// Build cypher query based on search results
 	if destNodeResult == nil && sourceNodeResult != nil {
 		// Only source node exists
 		cypher = fmt.Sprintf(`
 			MATCH (source:Entity)
 			WHERE id(source) = $source_id
-			MERGE (destination:%s:Entity {name: $destination_name})
+			MERGE (destination:%s:Entity {name: $destination_name%s})
 			ON CREATE SET
 				destination.created = timestamp(),
 				destination.embedding = $destination_embedding,
@@ -290,7 +297,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, toType, relationshipType)
+		`, toType, toProperties, relationshipType)
 
 		params = map[string]interface{}{
 			"source_id":             sourceNodeResult.ID,
@@ -303,7 +310,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 		cypher = fmt.Sprintf(`
 			MATCH (destination:Entity)
 			WHERE id(destination) = $destination_id
-			MERGE (source:%s:Entity {name: $source_name})
+			MERGE (source:%s:Entity {name: $source_name%s})
 			ON CREATE SET
 				source.created = timestamp(),
 				source.embedding = $source_embedding,
@@ -315,7 +322,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 r.hit = coalesce(r.hit, 0) + 1
 			RETURN source.name AS source, type(r) AS relationship, destination.name AS target
-		`, fromType, relationshipType)
+		`, fromType, fromProperties, relationshipType)
 
 		params = map[string]interface{}{
 			"destination_id":   destNodeResult.ID,
@@ -348,10 +355,10 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
 	} else {
 		// Both nodes don't exist
 		cypher = fmt.Sprintf(`
-			MERGE (n:%s:Entity {name: $source_name})
+			MERGE (n:%s:Entity {name: $source_name%s})
 			ON CREATE SET n.created = timestamp(), n.embedding = $source_embedding, n:Entity
 			ON MATCH SET n.embedding = $source_embedding
-			MERGE (m:%s:Entity {name: $dest_name})
+			MERGE (m:%s:Entity {name: $dest_name%s})
 			ON CREATE SET m.created = timestamp(), m.embedding = $dest_embedding, m:Entity
 			ON MATCH SET m.embedding = $dest_embedding
 			MERGE (n)-[rel:%s]->(m)
@@ -361,7 +368,7 @@ func (i *Indexer) store(ctx context.Context, session neo4j.SessionWithContext, p
             ON MATCH SET
                 rel.hit = coalesce(rel.hit, 0) + 1
 			RETURN n.name AS source, type(rel) AS relationship, m.name AS target
-		`, fromType, toType, relationshipType)
+		`, fromType, fromProperties, toType, toProperties, relationshipType)
 
 		params = map[string]interface{}{
 			"source_name":      pair.From.Name,
@@ -472,8 +479,23 @@ func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, 
 	return func(ctx context.Context, docs []*schema.Document) (StorePairs, error) {
 		results := make(StorePairs, 0)
 
+		session := i.Driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeWrite,
+			DatabaseName: i.Database,
+		})
+		defer session.Close(ctx)
+
 		for _, doc := range docs {
-			storePairs, err := i.extractEntitiesAndRelations(ctx, doc)
+			collectionKey := ""
+			if doc.MetaData[constants.CollectionKey] != nil {
+				collectionKey = doc.MetaData[constants.CollectionKey].(string)
+			}
+			records, err := infraNeo4j.SearchRecentNode(ctx, session, collectionKey)
+			if err != nil {
+				return nil, err
+			}
+
+			storePairs, err := i.extractEntitiesAndRelations(ctx, doc, records)
 			if err != nil {
 				return nil, err
 			}
@@ -486,19 +508,37 @@ func (i *IndexerConfig) getDefaultDocumentConverter() func(ctx context.Context, 
 }
 
 // extractEntitiesAndRelations extracts entities and relations from a document using LLM
-func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document) (StorePairs, error) {
-	// Use the prompt from models to extract entities and relations
-	userKey := ctxwarp.GetHeaderContext(ctx).UserKey
-	if doc.MetaData[constants.UserKey] != "" {
-		u, ok := doc.MetaData[constants.UserKey].(string)
-		if ok {
-			userKey = u
+func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *schema.Document, recentNodes []*neo4j.Record) (StorePairs, error) {
+	existNodes := make([]Entity, 0)
+	for _, node := range recentNodes {
+		var (
+			nameStr string
+			typeStr string
+		)
+		name, _ := node.Get("entity_name")
+		if name != nil {
+			nameStr = name.(string)
 		}
+		type_, _ := node.Get("entity_type")
+		if type_ != nil {
+			typeStr = type_.(string)
+		}
+
+		if nameStr == "" {
+			continue
+		}
+		existNodes = append(existNodes, Entity{
+			Name: nameStr,
+			Type: typeStr,
+		})
 	}
+	existNodesJson, _ := sonic.MarshalString(existNodes)
+
+	// Use the prompt from models to extract entities and relations
 	msgs, err := PromptGraphExtractEntityAndRelation.Format(ctx, map[string]any{
 		"origin_request": doc.Content,
-		"user_key":       userKey,
 		"resp_schema":    i.respSchema,
+		"exist_nodes":    existNodesJson,
 	})
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -519,6 +559,12 @@ func (i *IndexerConfig) extractEntitiesAndRelations(ctx context.Context, doc *sc
 		fromEntity := Entity{}
 		toEntity := Entity{}
 		for _, entity := range extractEntityAndRelation.Entities {
+			if doc.MetaData[constants.CollectionKey] != "" {
+				if entity.Properties == nil {
+					entity.Properties = make(map[string]interface{})
+				}
+				entity.Properties[constants.CollectionKey] = doc.MetaData[constants.CollectionKey]
+			}
 			if entity.Name == relation.FromEntityName {
 				fromEntity = entity
 			}

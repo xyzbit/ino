@@ -101,9 +101,6 @@ func (k *Extractor) Extract(ctx context.Context, docs []*schema.Document, opts .
 			if header.CollectionKey != "" {
 				metaData[constants.CollectionKey] = header.CollectionKey
 			}
-			if header.UserKey != "" {
-				metaData[constants.UserKey] = header.UserKey
-			}
 		}
 
 		results = append(results, &schema.Document{

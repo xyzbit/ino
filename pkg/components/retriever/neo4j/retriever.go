@@ -2,6 +2,7 @@ package neo4j
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	infraNeo4j "github.com/xyzbit/ino/pkg/infra/neo4j"
 )
 
 const retrieveTyp = "neo4j_retriever"
@@ -83,11 +85,12 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}, opts...)
 
 	// callback
+	filter, _ := json.Marshal(options.Filter)
 	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           options.TopK,
-		Filter:         options.GetFilter(),
+		Filter:         string(filter),
 		ScoreThreshold: &options.SimilarityThreshold,
 		Extra: map[string]any{
 			"limit": options.Limit,
@@ -113,7 +116,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	defer session.Close(ctx)
 
 	// 执行图检索
-	documents, err := r.graphSearch(ctx, session, query, queryEmbedding[0], options)
+	documents, err := r.graphSearch(ctx, session, queryEmbedding[0], options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform graph search: %w", err)
 	}
@@ -124,82 +127,33 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 }
 
 // graphSearch 执行图检索
-func (r *Retriever) graphSearch(ctx context.Context, session neo4j.SessionWithContext, query string, embedding []float64, opts *RetrieverImplOptions) ([]*schema.Document, error) {
-	// 构建Cypher查询
-	cypher := r.buildSearchCypher(opts)
-
-	// 准备参数
-	embeddingList := make([]interface{}, len(embedding))
-	for i, v := range embedding {
-		embeddingList[i] = v
-	}
-
-	params := map[string]interface{}{
-		"query_embedding":      embeddingList,
-		"similarity_threshold": opts.SimilarityThreshold,
-		"top_k":                opts.TopK,
-		"limit":                opts.Limit,
-	}
-
-	log.Printf("Neo4j Search - Query: %s, TopK: %d, Threshold: %f", query, opts.TopK, opts.SimilarityThreshold)
-
-	// 执行查询
-	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
-		result, err := tx.Run(ctx, cypher, params)
-		if err != nil {
-			return nil, err
-		}
-
-		var documents []*schema.Document
-		for result.Next(ctx) {
-			record := result.Record()
-			doc, err := r.recordToDocument(record, query)
-			if err != nil {
-				log.Printf("Failed to convert record to document: %v", err)
-				continue
-			}
-			documents = append(documents, doc)
-		}
-
-		return documents, result.Err()
+func (r *Retriever) graphSearch(ctx context.Context, session neo4j.SessionWithContext, embedding []float64, opts *RetrieverImplOptions) ([]*schema.Document, error) {
+	records, err := infraNeo4j.GraphSearch(ctx, session, embedding, &infraNeo4j.SearchOptions{
+		TopK:                opts.TopK,
+		Limit:               opts.Limit,
+		SimilarityThreshold: opts.SimilarityThreshold,
+		MaxDepth:            opts.MaxDepth,
+		Filter:              opts.Filter,
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	return result.([]*schema.Document), nil
-}
+	var documents []*schema.Document
+	for _, record := range records {
+		doc, err := r.recordToDocument(record)
+		if err != nil {
+			log.Printf("Failed to convert record to document: %v", err)
+			continue
+		}
+		documents = append(documents, doc)
+	}
 
-// buildSearchCypher 构建搜索的Cypher查询
-func (r *Retriever) buildSearchCypher(opts *RetrieverImplOptions) string {
-	return fmt.Sprintf(`
-			CALL db.index.vector.queryNodes('entity_embedding_index', $top_k, $query_embedding)
-			YIELD node, score
-			WHERE score >= $similarity_threshold %s
-			
-			// 获取相关实体和关系
-			OPTIONAL MATCH (node)-[rels*1..%d]-(related:Entity)
-			WHERE all(r IN rels WHERE r.hit >= 1)  // 只获取有足够支撑的关系
-			
-			WITH node, rels, related, score
-			
-			RETURN 
-			    node.name as entity_name,
-			    node.type as entity_type,
-				related.name as related_name,
-				related.type as related_type,
-				[rel in rels | type(rel)] as relations,
-                size(rels) as layer,
-				score
-			ORDER BY score DESC, layer ASC
-
-			LIMIT $limit
-		`, opts.GetFilter(), opts.MaxDepth)
+	return documents, nil
 }
 
 // recordToDocument 将Neo4j记录转换为schema.Document
-func (r *Retriever) recordToDocument(record *neo4j.Record, originalQuery string) (*schema.Document, error) {
+func (r *Retriever) recordToDocument(record *neo4j.Record) (*schema.Document, error) {
 	entityName, _ := record.Get("entity_name")
 	entityType, _ := record.Get("entity_type")
 	relatedName, _ := record.Get("related_name")

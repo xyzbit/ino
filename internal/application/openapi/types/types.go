@@ -9,9 +9,9 @@ type CollectKnowledgeRequest struct {
 
 type CollectKnowledgeRequestHeader struct {
 	RequestID string `header:"request-id" json:"request_id,omitempty"`
-	// CollectionKey 暂时不支持，用于数据隔离.
+	// CollectionKey 用于数据隔离.
 	CollectionKey string `header:"collection-key" json:"collection_key,omitempty"`
-	UserKey       string `header:"user-key" json:"user_key,omitempty"`
+	// AccessToken   string `header:"access-token" json:"access_token,omitempty"`
 }
 
 type CollectKnowledgeResponse struct {

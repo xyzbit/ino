@@ -11,8 +11,8 @@ type ExtractEntityAndRelation struct {
 
 type Entity struct {
 	Type       string                 `json:"type" jsonschema:"required,description=the type of the entity, such as person, organization, concept,... etc."`
-	Name       string                 `json:"name" jsonschema:"required,description=the name of the entity"`
-	Properties map[string]interface{} `json:"properties,omitempty" jsonschema:"description=the properties of the entity, extract only necessary information, no more than 5 properties, example: if the entity is a person, the properties can be age, gender, ... etc."`
+	Name       string                 `json:"name" jsonschema:"required,description=the name of the entity, must be a specific and clear name, such as '张三', 'k8s', '消息中心', ... etc."`
+	Properties map[string]interface{} `json:"properties,omitempty" jsonschema:"description=the properties of the entity, extract only necessary information, no more than 3 properties, example: if the entity is a person, the properties can be age, gender, ... etc."`
 }
 
 type Relation struct {

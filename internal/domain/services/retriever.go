@@ -107,10 +107,6 @@ func (r *Retriever) RetrieveQuick(ctx context.Context, query string) (*types.Ret
 			milvusFilters = append(milvusFilters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.CollectionKey, header.CollectionKey))
 			neo4jFilters[constants.CollectionKey] = header.CollectionKey
 		}
-		if header.UserKey != "" {
-			milvusFilters = append(milvusFilters, fmt.Sprintf("metadata[\"%s\"] == \"%s\"", constants.UserKey, header.UserKey))
-			neo4jFilters[constants.UserKey] = header.UserKey
-		}
 		if len(milvusFilters) > 0 {
 			opts = append(opts, compose.WithRetrieverOption(pkgmilvus.WithFilter(strings.Join(milvusFilters, " AND "))))
 		}

@@ -1,8 +1,6 @@
 package neo4j
 
 import (
-	"fmt"
-
 	"github.com/cloudwego/eino/components/retriever"
 )
 
@@ -44,15 +42,4 @@ func WithFilter(filterKVs map[string]string) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *RetrieverImplOptions) {
 		o.Filter = filterKVs
 	})
-}
-
-func (r *RetrieverImplOptions) GetFilter() string {
-	if len(r.Filter) == 0 {
-		return ""
-	}
-	filter := ""
-	for k, v := range r.Filter {
-		filter += fmt.Sprintf(" AND node.%s = \"%s\"", k, v)
-	}
-	return filter
 }

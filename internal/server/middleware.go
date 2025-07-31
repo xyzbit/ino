@@ -27,7 +27,6 @@ func middlewareSetHeaderContext(c *gin.Context) {
 	ctx = ctxwarp.SetHeaderContext(ctx, &ctxwarp.HeaderContext{
 		RequestID:     header.RequestID,
 		CollectionKey: header.CollectionKey,
-		UserKey:       header.UserKey,
 	})
 	c.Request = c.Request.WithContext(ctx)
 	c.Next()
